@@ -38,6 +38,7 @@ disk_wiper.db
 # Environment Variables
 .env
 .env.local
+.cursorrules
 
 # IDE
 .vscode/
