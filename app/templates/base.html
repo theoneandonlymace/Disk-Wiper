@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{% block title %}Disk Wiper{% endblock %}</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Custom Styles -->
+    <style>
+        .htmx-indicator {
+            display: none;
+        }
+        .htmx-request .htmx-indicator {
+            display: inline-block;
+        }
+        .htmx-request.htmx-indicator {
+            display: inline-block;
+        }
+    </style>
+    
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-blue-600 text-white shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-8">
+                    <a href="{{ url_for('main.index') }}" class="flex items-center space-x-2">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                        <span class="text-xl font-bold">Disk Wiper</span>
+                    </a>
+                    
+                    <div class="hidden md:flex space-x-4">
+                        <a href="{{ url_for('main.index') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                            Festplatten
+                        </a>
+                        <a href="{{ url_for('main.wipes_page') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                            Wipe-Historie
+                        </a>
+                        <a href="{{ url_for('main.search_page') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                            Suche
+                        </a>
+                    </div>
+                </div>
+                
+                <div class="flex items-center">
+                    <span class="text-sm opacity-75">Sichere Festplattenlöschung</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-gray-800 text-white mt-16">
+        <div class="container mx-auto px-4 py-6 text-center">
+            <p class="text-sm opacity-75">
+                ⚠️ Achtung: Boot-Festplatten sind automatisch geschützt und können nicht gelöscht werden.
+            </p>
+        </div>
+    </footer>
+    
+    <!-- Toast Container for Notifications -->
+    <div id="toast-container" class="fixed bottom-4 right-4 space-y-2 z-50">
+        <!-- Toasts will be inserted here -->
+    </div>
+    
+    <script>
+        // Toast Notification System
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            const bgColor = {
+                'success': 'bg-green-500',
+                'error': 'bg-red-500',
+                'warning': 'bg-yellow-500',
+                'info': 'bg-blue-500'
+            }[type] || 'bg-blue-500';
+            
+            toast.className = `${bgColor} text-white px-6 py-4 rounded-lg shadow-lg transform transition-all duration-300 max-w-md`;
+            toast.innerHTML = `
+                <div class="flex items-center space-x-3">
+                    <span>${message}</span>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 font-bold">×</button>
+                </div>
+            `;
+            
+            document.getElementById('toast-container').appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 300);
+            }, 5000);
+        }
+        
+        // Get CSRF token from meta tag or cookie
+        function getCSRFToken() {
+            const metaTag = document.querySelector('meta[name="csrf-token"]');
+            if (metaTag) {
+                return metaTag.getAttribute('content');
+            }
+            // Fallback: try to get from cookie
+            const cookies = document.cookie.split(';');
+            for (let cookie of cookies) {
+                const [name, value] = cookie.trim().split('=');
+                if (name === 'csrf_token') {
+                    return decodeURIComponent(value);
+                }
+            }
+            return '';
+        }
+        
+        // Global HTMX error handler
+        document.body.addEventListener('htmx:responseError', function(evt) {
+            showToast('Ein Fehler ist aufgetreten: ' + (evt.detail.error || 'Unbekannter Fehler'), 'error');
+        });
+    </script>
+    
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
+

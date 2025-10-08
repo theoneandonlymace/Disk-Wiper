@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+
+{% block title %}Festplatten - Disk Wiper{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-800">Festplatten</h1>
+            <p class="text-gray-600 mt-1">Verfügbare Festplatten scannen und verwalten</p>
+        </div>
+        
+        <button 
+            hx-get="{{ url_for('main.scan_disks') }}"
+            hx-target="#disks-container"
+            hx-swap="innerHTML"
+            hx-on::after-request="if(event.detail.successful) showToast('Festplatten gescannt', 'success')"
+            class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-lg shadow-lg transition flex items-center space-x-2">
+            <svg class="w-5 h-5 htmx-indicator animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            <span>Festplatten scannen</span>
+        </button>
+    </div>
+    
+    <!-- Disks Container -->
+    <div 
+        id="disks-container"
+        hx-get="{{ url_for('main.scan_disks') }}"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+        class="space-y-4">
+        <!-- Loading State -->
+        <div class="flex items-center justify-center py-16">
+            <div class="text-center">
+                <svg class="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <p class="text-gray-600">Scanne Festplatten...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Wipe Modal -->
+<div id="wipe-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+    <div class="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">Festplatte löschen</h2>
+        
+        <div id="wipe-modal-content">
+            <!-- Content will be loaded here -->
+        </div>
+        
+        <div class="mt-6 flex justify-end space-x-3">
+            <button onclick="closeWipeModal()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                Abbrechen
+            </button>
+            <button id="confirm-wipe-btn" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition">
+                Löschen starten
+            </button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function openWipeModal(diskId, diskModel, diskSerial, isBootDisk) {
+        if (isBootDisk) {
+            showToast('Boot-Festplatten können nicht gelöscht werden!', 'error');
+            return;
+        }
+        
+        const modal = document.getElementById('wipe-modal');
+        const content = document.getElementById('wipe-modal-content');
+        
+        content.innerHTML = `
+            <div class="space-y-4">
+                <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <div class="flex items-start space-x-3">
+                        <svg class="w-6 h-6 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        <div>
+                            <h3 class="font-bold text-red-800">Warnung!</h3>
+                            <p class="text-red-700 text-sm mt-1">
+                                Diese Aktion löscht unwiderruflich alle Daten auf der Festplatte.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-lg p-4 space-y-2">
+                    <div class="flex justify-between">
+                        <span class="font-semibold text-gray-700">Modell:</span>
+                        <span class="text-gray-900">${diskModel}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="font-semibold text-gray-700">Seriennummer:</span>
+                        <span class="text-gray-900">${diskSerial}</span>
+                    </div>
+                </div>
+                
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Lösch-Methode</label>
+                        <select id="wipe-method" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="zeros">Zeros (Einmal mit Nullen überschreiben)</option>
+                            <option value="random">Random (Einmal mit Zufallsdaten)</option>
+                            <option value="dod">DoD 5220.22-M (3 Pässe, höchste Sicherheit)</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Anzahl Pässe (nur für Zeros/Random)</label>
+                        <input type="number" id="wipe-passes" value="1" min="1" max="10" 
+                               class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Set up confirm button
+        const confirmBtn = document.getElementById('confirm-wipe-btn');
+        confirmBtn.onclick = () => startWipe(diskId);
+        
+        modal.classList.remove('hidden');
+    }
+    
+    function closeWipeModal() {
+        document.getElementById('wipe-modal').classList.add('hidden');
+    }
+    
+    function startWipe(diskId) {
+        const method = document.getElementById('wipe-method').value;
+        const passes = document.getElementById('wipe-passes').value;
+        
+        fetch(`/api/disks/${diskId}/wipe`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCSRFToken()
+            },
+            body: JSON.stringify({
+                method: method,
+                passes: parseInt(passes)
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Wipe-Vorgang gestartet!', 'success');
+                closeWipeModal();
+                
+                // Redirect to wipes page after 1 second
+                setTimeout(() => {
+                    window.location.href = '{{ url_for("main.wipes_page") }}';
+                }, 1000);
+            } else {
+                showToast('Fehler: ' + data.error, 'error');
+            }
+        })
+        .catch(error => {
+            showToast('Netzwerkfehler: ' + error, 'error');
+        });
+    }
+    
+    function loadSmartData(diskId, buttonElement) {
+        const originalText = buttonElement.innerHTML;
+        buttonElement.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Lade...';
+        buttonElement.disabled = true;
+        
+        fetch(`/api/disks/${diskId}/smart`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast('SMART-Daten erfolgreich gelesen', 'success');
+                    // Reload disk list
+                    htmx.trigger('#disks-container', 'htmx:afterSwap');
+                } else {
+                    showToast('Fehler beim Lesen der SMART-Daten: ' + data.error, 'error');
+                }
+                buttonElement.innerHTML = originalText;
+                buttonElement.disabled = false;
+            })
+            .catch(error => {
+                showToast('Netzwerkfehler: ' + error, 'error');
+                buttonElement.innerHTML = originalText;
+                buttonElement.disabled = false;
+            });
+    }
+</script>
+{% endblock %}
+

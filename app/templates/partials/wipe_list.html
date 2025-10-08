@@ -1,0 +1,146 @@
+{% if wipes %}
+    {% for wipe in wipes %}
+    <div class="bg-white rounded-lg shadow-lg p-6 hover:shadow-xl transition">
+        <div class="flex items-start justify-between">
+            <div class="flex-1">
+                <!-- Header -->
+                <div class="flex items-center space-x-3 mb-4">
+                    <div class="flex-shrink-0">
+                        {% if wipe.status == 'completed' %}
+                        <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        {% elif wipe.status == 'in_progress' %}
+                        <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-blue-600 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                        </div>
+                        {% elif wipe.status == 'failed' %}
+                        <div class="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        {% else %}
+                        <div class="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
+                            <svg class="w-6 h-6 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                            </svg>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="flex-1">
+                        <h3 class="text-xl font-bold text-gray-800">{{ wipe.model or 'Unbekanntes Modell' }}</h3>
+                        <p class="text-sm text-gray-500">SN: {{ wipe.serial_number }}</p>
+                    </div>
+                    
+                    <!-- Status Badge -->
+                    <span class="px-4 py-2 rounded-full text-sm font-semibold
+                        {% if wipe.status == 'completed' %}bg-green-100 text-green-800
+                        {% elif wipe.status == 'in_progress' %}bg-blue-100 text-blue-800
+                        {% elif wipe.status == 'failed' %}bg-red-100 text-red-800
+                        {% else %}bg-gray-100 text-gray-800{% endif %}">
+                        {% if wipe.status == 'completed' %}Abgeschlossen
+                        {% elif wipe.status == 'in_progress' %}In Bearbeitung
+                        {% elif wipe.status == 'failed' %}Fehlgeschlagen
+                        {% else %}{{ wipe.status }}{% endif %}
+                    </span>
+                </div>
+                
+                <!-- Progress Bar (nur bei in_progress) -->
+                {% if wipe.status == 'in_progress' %}
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-sm font-semibold text-gray-700">Fortschritt</span>
+                        <span class="text-sm font-semibold text-blue-600">{{ "%.1f"|format(wipe.progress_percent) }}%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-3">
+                        <div class="bg-blue-600 h-3 rounded-full transition-all duration-500" style="width: {{ wipe.progress_percent }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Info Grid -->
+                <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+                    <div>
+                        <span class="text-gray-600 font-semibold">Device Path:</span>
+                        <p class="text-gray-900">{{ wipe.device_path }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 font-semibold">Methode:</span>
+                        <p class="text-gray-900">{{ wipe.wipe_method }} ({{ wipe.wipe_passes }} Pass{% if wipe.wipe_passes != 1 %}es{% endif %})</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 font-semibold">Startzeit:</span>
+                        <p class="text-gray-900">{{ wipe.start_time.strftime('%d.%m.%Y %H:%M:%S') if wipe.start_time else 'N/A' }}</p>
+                    </div>
+                    <div>
+                        <span class="text-gray-600 font-semibold">Dauer:</span>
+                        <p class="text-gray-900">
+                            {% if wipe.duration_seconds %}
+                                {% set hours = wipe.duration_seconds // 3600 %}
+                                {% set minutes = (wipe.duration_seconds % 3600) // 60 %}
+                                {% set seconds = wipe.duration_seconds % 60 %}
+                                {% if hours > 0 %}{{ hours }}h {% endif %}{{ minutes }}m {{ seconds }}s
+                            {% else %}
+                                N/A
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Error Message (falls vorhanden) -->
+                {% if wipe.error_message %}
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+                    <div class="flex items-start space-x-2">
+                        <svg class="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                        </svg>
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-red-800 text-sm">Fehler</h4>
+                            <p class="text-red-700 text-sm">{{ wipe.error_message }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <!-- Actions -->
+                <div class="flex flex-wrap gap-2 pt-4 border-t border-gray-200">
+                    {% if wipe.status == 'completed' %}
+                    <a href="{{ url_for('main.get_wipe_report', wipe_id=wipe.id, format='html') }}" 
+                       target="_blank"
+                       class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <span>Report anzeigen</span>
+                    </a>
+                    {% endif %}
+                    
+                    {% if wipe.verified %}
+                    <span class="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-green-100 text-green-800">
+                        <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                        </svg>
+                        Verifiziert
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+        </svg>
+        <h3 class="text-xl font-bold text-gray-800 mb-2">Keine Wipe-Vorgänge</h3>
+        <p class="text-gray-600">Es wurden noch keine Festplatten gelöscht.</p>
+    </div>
+{% endif %}
+
