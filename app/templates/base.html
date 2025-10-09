@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="de" class="transition-colors duration-200">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,9 +8,23 @@
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class'
+        }
+    </script>
     
     <!-- HTMX -->
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Dark Mode Initialization (before body renders) -->
+    <script>
+        // Load dark mode preference before page renders to prevent flash
+        if (localStorage.getItem('darkMode') === 'true' || 
+            (!localStorage.getItem('darkMode') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        }
+    </script>
     
     <!-- Custom Styles -->
     <style>
@@ -23,13 +37,21 @@
         .htmx-request.htmx-indicator {
             display: inline-block;
         }
+        
+        /* Dark mode toggle animation */
+        .dark-mode-toggle {
+            transition: transform 0.3s ease;
+        }
+        .dark-mode-toggle:hover {
+            transform: scale(1.1);
+        }
     </style>
     
     {% block extra_head %}{% endblock %}
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 dark:bg-gray-900 min-h-screen transition-colors duration-200 flex flex-col">
     <!-- Navigation -->
-    <nav class="bg-blue-600 text-white shadow-lg">
+    <nav class="bg-blue-600 dark:bg-gray-800 text-white shadow-lg transition-colors duration-200">
         <div class="container mx-auto px-4">
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center space-x-8">
@@ -41,32 +63,48 @@
                     </a>
                     
                     <div class="hidden md:flex space-x-4">
-                        <a href="{{ url_for('main.index') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                        <a href="{{ url_for('main.index') }}" class="hover:bg-blue-700 dark:hover:bg-gray-700 px-3 py-2 rounded transition">
                             Festplatten
                         </a>
-                        <a href="{{ url_for('main.wipes_page') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                        <a href="{{ url_for('main.wipes_page') }}" class="hover:bg-blue-700 dark:hover:bg-gray-700 px-3 py-2 rounded transition">
                             Wipe-Historie
                         </a>
-                        <a href="{{ url_for('main.search_page') }}" class="hover:bg-blue-700 px-3 py-2 rounded transition">
+                        <a href="{{ url_for('main.search_page') }}" class="hover:bg-blue-700 dark:hover:bg-gray-700 px-3 py-2 rounded transition">
                             Suche
                         </a>
                     </div>
                 </div>
                 
-                <div class="flex items-center">
-                    <span class="text-sm opacity-75">Sichere Festplattenlöschung</span>
+                <div class="flex items-center space-x-4">
+                    <span class="text-sm opacity-75 hidden lg:inline">Sichere Festplattenlöschung</span>
+                    
+                    <!-- Dark Mode Toggle -->
+                    <button 
+                        id="darkModeToggle" 
+                        onclick="toggleDarkMode()"
+                        class="dark-mode-toggle p-2 rounded-lg hover:bg-blue-700 dark:hover:bg-gray-700 transition-all focus:outline-none focus:ring-2 focus:ring-white"
+                        aria-label="Dark Mode umschalten">
+                        <!-- Sun Icon (shown in dark mode) -->
+                        <svg id="sunIcon" class="w-6 h-6 hidden dark:block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                        </svg>
+                        <!-- Moon Icon (shown in light mode) -->
+                        <svg id="moonIcon" class="w-6 h-6 block dark:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
     </nav>
     
     <!-- Main Content -->
-    <main class="container mx-auto px-4 py-8">
+    <main class="container mx-auto px-4 py-8 flex-grow">
         {% block content %}{% endblock %}
     </main>
     
     <!-- Footer -->
-    <footer class="bg-gray-800 text-white mt-16">
+    <footer class="bg-gray-800 dark:bg-gray-950 text-white mt-auto transition-colors duration-200">
         <div class="container mx-auto px-4 py-6 text-center">
             <p class="text-sm opacity-75">
                 ⚠️ Achtung: Boot-Festplatten sind automatisch geschützt und können nicht gelöscht werden.
@@ -80,21 +118,31 @@
     </div>
     
     <script>
+        // Dark Mode Toggle Function
+        function toggleDarkMode() {
+            const html = document.documentElement;
+            const isDark = html.classList.toggle('dark');
+            localStorage.setItem('darkMode', isDark);
+            
+            // Optional: Show toast notification
+            // showToast(isDark ? 'Dark Mode aktiviert' : 'Light Mode aktiviert', 'info');
+        }
+        
         // Toast Notification System
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             const bgColor = {
-                'success': 'bg-green-500',
-                'error': 'bg-red-500',
-                'warning': 'bg-yellow-500',
-                'info': 'bg-blue-500'
-            }[type] || 'bg-blue-500';
+                'success': 'bg-green-500 dark:bg-green-600',
+                'error': 'bg-red-500 dark:bg-red-600',
+                'warning': 'bg-yellow-500 dark:bg-yellow-600',
+                'info': 'bg-blue-500 dark:bg-blue-600'
+            }[type] || 'bg-blue-500 dark:bg-blue-600';
             
             toast.className = `${bgColor} text-white px-6 py-4 rounded-lg shadow-lg transform transition-all duration-300 max-w-md`;
             toast.innerHTML = `
                 <div class="flex items-center space-x-3">
                     <span>${message}</span>
-                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 font-bold">×</button>
+                    <button onclick="this.parentElement.parentElement.remove()" class="ml-4 font-bold hover:opacity-80">×</button>
                 </div>
             `;
             
