@@ -46,6 +46,16 @@ def scan_disks():
                 )
                 db.session.add(disk)
             
+            # SMART-Daten automatisch beim Scannen auslesen und speichern
+            try:
+                smart_data = SmartReader.get_smart_data(disk_info['device_path'])
+                if 'error' not in smart_data:
+                    disk.smart_data = json.dumps(smart_data)
+                    disk.smart_status = smart_data.get('smart_status', 'UNKNOWN')
+            except Exception as smart_error:
+                # Fehler beim Auslesen der SMART-Daten nicht kritisch
+                print(f"Fehler beim Auslesen der SMART-Daten für {disk_info['device_path']}: {smart_error}")
+            
             updated_disks.append(disk)
         
         db.session.commit()
@@ -108,12 +118,20 @@ def get_disk_smart(disk_id):
         disk.smart_status = smart_data.get('smart_status', 'UNKNOWN')
         db.session.commit()
         
+        # Wenn HTMX-Request, gebe HTML zurück
+        if request.headers.get('HX-Request'):
+            return render_template('partials/smart_modal_content.html', 
+                                  disk=disk, 
+                                  smart_data=smart_data)
+        
         return jsonify({
             'success': True,
             'smart_data': smart_data
         })
         
     except Exception as e:
+        if request.headers.get('HX-Request'):
+            return f'<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">Fehler: {str(e)}</div>', 500
         return jsonify({
             'success': False,
             'error': str(e)

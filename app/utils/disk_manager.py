@@ -197,24 +197,59 @@ class DiskManager:
     @staticmethod
     def _is_boot_disk_windows(device_id, boot_drive):
         """Prüft ob Windows-Disk eine Boot-Disk ist"""
+        # KRITISCHE SICHERHEITSPRÜFUNG
+        # Mehrere Methoden verwenden für maximale Sicherheit
+        
         try:
-            # Prüfe ob die Disk das System-Laufwerk enthält (mit sicherer Parameter-Übergabe)
-            ps_script = """
-            param([int]$DiskNumber, [string]$DriveLetter)
-            $disk = Get-Partition -DiskNumber $DiskNumber | Where-Object {$_.DriveLetter -eq $DriveLetter}
-            if ($disk) { Write-Output 'true' } else { Write-Output 'false' }
+            # Methode 1: Prüfe ob die Disk das System-Laufwerk (C:) enthält
+            ps_script = f"""
+            $partitions = Get-Partition -DiskNumber {device_id} -ErrorAction SilentlyContinue
+            $systemPartition = $partitions | Where-Object {{$_.DriveLetter -eq '{boot_drive[0]}'}}
+            if ($systemPartition) {{ 
+                Write-Output 'BOOT_DISK' 
+            }} else {{ 
+                Write-Output 'NOT_BOOT' 
+            }}
             """
             
             result = subprocess.run(
-                ['powershell', '-Command', ps_script, '-DiskNumber', str(device_id), '-DriveLetter', boot_drive[0]],
+                ['powershell', '-Command', ps_script],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=10
             )
             
-            return 'true' in result.stdout.lower()
+            if 'BOOT_DISK' in result.stdout:
+                return True
             
-        except:
-            # Im Zweifelsfall als Boot-Disk markieren (sicher ist sicher!)
+            # Methode 2: PHYSICALDRIVE0 ist fast immer die Boot-Disk
+            if device_id == 0:
+                return True
+            
+            # Methode 3: Prüfe ob Disk die Windows-Partition enthält
+            ps_script2 = f"""
+            $disk = Get-Disk -Number {device_id} -ErrorAction SilentlyContinue
+            if ($disk.IsBoot -or $disk.IsSystem) {{
+                Write-Output 'IS_SYSTEM'
+            }}
+            """
+            
+            result2 = subprocess.run(
+                ['powershell', '-Command', ps_script2],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if 'IS_SYSTEM' in result2.stdout:
+                return True
+            
+            return False
+            
+        except Exception as e:
+            # SICHERHEITSREGEL: Bei Fehler IMMER als Boot-Disk markieren!
+            print(f"WARNUNG: Boot-Disk-Prüfung fehlgeschlagen für Disk {device_id}: {e}")
+            print(f"Disk {device_id} wird aus Sicherheitsgründen als Boot-Disk markiert!")
             return True
 
     @staticmethod

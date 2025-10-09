@@ -1,0 +1,258 @@
+<!-- SMART-Daten Modal Content -->
+<div class="space-y-4">
+    <!-- Header -->
+    <div class="flex items-start space-x-3 pb-4 border-b border-gray-200">
+        <svg class="w-8 h-8 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+        </svg>
+        <div class="flex-1">
+            <h3 class="text-xl font-bold text-gray-800">SMART-Daten</h3>
+            <p class="text-sm text-gray-600 mt-1">{{ disk.model or 'Unbekanntes Modell' }}</p>
+            <p class="text-xs text-gray-500">SN: {{ disk.serial_number }}</p>
+        </div>
+    </div>
+
+    {% if 'error' in smart_data %}
+    <!-- Error Display -->
+    <div class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <div class="flex items-start space-x-3">
+            <svg class="w-6 h-6 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            <div>
+                <h4 class="font-bold text-red-800">Fehler beim Auslesen der SMART-Daten</h4>
+                <p class="text-red-700 text-sm mt-1">{{ smart_data.error }}</p>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    
+    <!-- SMART Status Badge -->
+    <div class="flex items-center justify-center">
+        {% if smart_data.get('smart_status') == 'PASSED' %}
+        <div class="bg-green-100 border-2 border-green-500 rounded-lg px-6 py-3 text-center">
+            <div class="flex items-center space-x-2">
+                <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span class="text-lg font-bold text-green-800">SMART Status: PASSED</span>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-yellow-100 border-2 border-yellow-500 rounded-lg px-6 py-3 text-center">
+            <div class="flex items-center space-x-2">
+                <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                <span class="text-lg font-bold text-yellow-800">SMART Status: {{ smart_data.get('smart_status', 'UNKNOWN') }}</span>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Basic Information -->
+    <div class="bg-gray-50 rounded-lg p-4 space-y-3">
+        <h4 class="font-bold text-gray-800 text-sm uppercase tracking-wider mb-3">Grundinformationen</h4>
+        
+        <div class="grid grid-cols-2 gap-4 text-sm">
+            {% if smart_data.get('model') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Modell:</span>
+                <p class="text-gray-900">{{ smart_data.model }}</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('serial') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Seriennummer:</span>
+                <p class="text-gray-900">{{ smart_data.serial }}</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('firmware') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Firmware:</span>
+                <p class="text-gray-900">{{ smart_data.firmware }}</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('capacity') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Kapazität:</span>
+                <p class="text-gray-900">{{ (smart_data.capacity / 1000000000) | round(2) }} GB</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('size_bytes') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Kapazität:</span>
+                <p class="text-gray-900">{{ (smart_data.size_bytes / 1000000000) | round(2) }} GB</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('media_type') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Medientyp:</span>
+                <p class="text-gray-900">{{ smart_data.media_type }}</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('bus_type') %}
+            <div>
+                <span class="text-gray-600 font-semibold">Bus-Typ:</span>
+                <p class="text-gray-900">{{ smart_data.bus_type }}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Health Statistics -->
+    <div class="bg-blue-50 rounded-lg p-4 space-y-3">
+        <h4 class="font-bold text-gray-800 text-sm uppercase tracking-wider mb-3">Gesundheitsdaten</h4>
+        
+        {% set has_health_data = smart_data.get('power_on_hours') is not none or 
+                                  smart_data.get('power_cycle_count') is not none or 
+                                  smart_data.get('temperature') is not none or 
+                                  smart_data.get('wear') is not none %}
+        
+        {% if has_health_data %}
+        <div class="grid grid-cols-2 gap-4 text-sm">
+            {% if smart_data.get('power_on_hours') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Betriebsstunden:</span>
+                <p class="text-gray-900">
+                    {% if smart_data.power_on_hours > 0 %}
+                        {{ smart_data.power_on_hours }} h ({{ (smart_data.power_on_hours / 24) | round(1) }} Tage)
+                    {% else %}
+                        Nicht verfügbar
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('power_cycle_count') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Stromzyklen:</span>
+                <p class="text-gray-900">
+                    {% if smart_data.power_cycle_count > 0 %}
+                        {{ smart_data.power_cycle_count }}
+                    {% else %}
+                        Nicht verfügbar
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('temperature') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Temperatur:</span>
+                <p class="text-gray-900">
+                    {% if smart_data.temperature > 0 %}
+                        {{ smart_data.temperature }} °C
+                    {% else %}
+                        Nicht verfügbar
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('wear') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Verschleiß:</span>
+                <p class="text-gray-900">{{ smart_data.wear }}%</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('read_errors') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Lesefehler:</span>
+                <p class="text-gray-900">{{ smart_data.read_errors }}</p>
+            </div>
+            {% endif %}
+            
+            {% if smart_data.get('write_errors') is not none %}
+            <div>
+                <span class="text-gray-600 font-semibold">Schreibfehler:</span>
+                <p class="text-gray-900">{{ smart_data.write_errors }}</p>
+            </div>
+            {% endif %}
+        </div>
+        {% else %}
+        <div class="text-center py-4">
+            <p class="text-gray-600 text-sm">Keine detaillierten Gesundheitsdaten verfügbar.</p>
+            <p class="text-gray-500 text-xs mt-1">Der SMART-Status wird oben angezeigt.</p>
+            <p class="text-gray-500 text-xs mt-2">
+                <strong>Hinweis:</strong> Für erweiterte SMART-Daten benötigt die Anwendung möglicherweise Administrator-Rechte.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- SMART Attributes (if available) -->
+    {% if smart_data.get('attributes') and smart_data.attributes %}
+    <div class="bg-white border border-gray-200 rounded-lg p-4">
+        <h4 class="font-bold text-gray-800 text-sm uppercase tracking-wider mb-3">SMART-Attribute</h4>
+        
+        <div class="max-h-64 overflow-y-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-100 sticky top-0">
+                    <tr>
+                        <th class="text-left px-3 py-2 font-semibold text-gray-700">Attribut</th>
+                        <th class="text-right px-3 py-2 font-semibold text-gray-700">Wert</th>
+                        <th class="text-right px-3 py-2 font-semibold text-gray-700">Raw</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for attr_name, attr_data in smart_data.attributes.items() %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-3 py-2 text-gray-700">{{ attr_name }}</td>
+                        <td class="px-3 py-2 text-right text-gray-900">{{ attr_data.value }}</td>
+                        <td class="px-3 py-2 text-right text-gray-900">{{ attr_data.raw }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Additional Health Status (Windows) -->
+    {% if smart_data.get('health_status') %}
+    <div class="bg-gray-50 rounded-lg p-4">
+        <div class="flex items-center justify-between">
+            <span class="text-gray-700 font-semibold">Gesundheitsstatus:</span>
+            <span class="px-3 py-1 rounded-full text-sm font-semibold
+                {% if smart_data.health_status == 'Healthy' %}bg-green-100 text-green-800
+                {% else %}bg-yellow-100 text-yellow-800{% endif %}">
+                {{ smart_data.health_status }}
+            </span>
+        </div>
+        {% if smart_data.get('operational_status') %}
+        <div class="flex items-center justify-between mt-2">
+            <span class="text-gray-700 font-semibold">Betriebsstatus:</span>
+            <span class="text-gray-900">{{ smart_data.operational_status }}</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Debug: Raw Data (optional, nur wenn nötig) -->
+    {% if smart_data.get('raw_data') %}
+    <details class="bg-gray-50 rounded-lg p-4">
+        <summary class="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900">
+            🔍 Rohdaten anzeigen (für Debugging)
+        </summary>
+        <div class="mt-3 bg-white border border-gray-200 rounded p-3 overflow-x-auto">
+            <pre class="text-xs text-gray-800">{{ smart_data.raw_data }}</pre>
+        </div>
+    </details>
+    {% endif %}
+
+    <!-- Timestamp -->
+    <div class="text-xs text-gray-500 text-center pt-2 border-t border-gray-200">
+        <p>Zuletzt aktualisiert: {{ disk.last_seen.strftime('%d.%m.%Y %H:%M:%S') if disk.last_seen else 'Unbekannt' }}</p>
+    </div>
+    
+    {% endif %}
+</div>
+

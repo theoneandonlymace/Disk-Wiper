@@ -63,6 +63,33 @@
     </div>
 </div>
 
+<!-- SMART-Daten Modal -->
+<div id="smart-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center" onclick="if(event.target === this) closeSmartModal()">
+    <div class="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 p-6 max-h-[90vh] overflow-y-auto">
+        <div class="flex justify-between items-start mb-4">
+            <h2 class="text-2xl font-bold text-gray-800">SMART-Daten</h2>
+            <button onclick="closeSmartModal()" class="text-gray-500 hover:text-gray-700 transition">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+        
+        <div id="smart-modal-content">
+            <!-- SMART-Daten werden hier geladen -->
+            <div class="flex items-center justify-center py-16">
+                <div class="text-center">
+                    <svg class="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-600">Lade SMART-Daten...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_scripts %}
@@ -168,29 +195,72 @@
     }
     
     function loadSmartData(diskId, buttonElement) {
-        const originalText = buttonElement.innerHTML;
-        buttonElement.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Lade...';
-        buttonElement.disabled = true;
+        // Modal öffnen
+        const modal = document.getElementById('smart-modal');
+        const content = document.getElementById('smart-modal-content');
         
-        fetch(`/api/disks/${diskId}/smart`)
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast('SMART-Daten erfolgreich gelesen', 'success');
-                    // Reload disk list
-                    htmx.trigger('#disks-container', 'htmx:afterSwap');
-                } else {
-                    showToast('Fehler beim Lesen der SMART-Daten: ' + data.error, 'error');
-                }
-                buttonElement.innerHTML = originalText;
-                buttonElement.disabled = false;
-            })
-            .catch(error => {
-                showToast('Netzwerkfehler: ' + error, 'error');
-                buttonElement.innerHTML = originalText;
-                buttonElement.disabled = false;
-            });
+        // Loading-Anzeige
+        content.innerHTML = `
+            <div class="flex items-center justify-center py-16">
+                <div class="text-center">
+                    <svg class="w-12 h-12 animate-spin text-blue-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p class="text-gray-600">Lade SMART-Daten...</p>
+                </div>
+            </div>
+        `;
+        
+        modal.classList.remove('hidden');
+        
+        // SMART-Daten mit HTMX laden
+        fetch(`/api/disks/${diskId}/smart`, {
+            headers: {
+                'HX-Request': 'true'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Serverfehler');
+            }
+            return response.text();
+        })
+        .then(html => {
+            content.innerHTML = html;
+            showToast('SMART-Daten erfolgreich gelesen und gespeichert', 'success');
+            
+            // Disk-Liste im Hintergrund neu laden, um den aktualisierten SMART-Status anzuzeigen
+            setTimeout(() => {
+                htmx.ajax('GET', '{{ url_for("main.scan_disks") }}', {
+                    target: '#disks-container',
+                    swap: 'innerHTML'
+                });
+            }, 500);
+        })
+        .catch(error => {
+            content.innerHTML = `
+                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                    <strong>Fehler:</strong> ${error.message}
+                </div>
+            `;
+            showToast('Fehler beim Laden der SMART-Daten', 'error');
+        });
     }
+    
+    function closeSmartModal() {
+        document.getElementById('smart-modal').classList.add('hidden');
+    }
+    
+    // ESC-Taste zum Schließen des SMART-Modals
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            const smartModal = document.getElementById('smart-modal');
+            if (!smartModal.classList.contains('hidden')) {
+                closeSmartModal();
+            }
+        }
+    });
 </script>
 {% endblock %}
 

@@ -133,45 +133,96 @@ class SmartReader:
             # Extrahiere Disk-Nummer aus Path
             disk_num = device_path.replace('\\\\.\\PHYSICALDRIVE', '')
             
-            # PowerShell-Skript für SMART-Daten (mit sicherer Parameter-Übergabe)
+            # Vereinfachtes PowerShell-Skript ohne Get-StorageReliabilityCounter
+            # (benötigt oft Admin-Rechte und ist nicht immer verfügbar)
             ps_script = """
             param([int]$DeviceNumber)
-            $disk = Get-PhysicalDisk -DeviceNumber $DeviceNumber
-            $smart = Get-StorageReliabilityCounter -PhysicalDisk $disk
-            
-            $result = @{
-                'model' = $disk.FriendlyName
-                'serial' = $disk.SerialNumber
-                'health_status' = $disk.HealthStatus
-                'operational_status' = $disk.OperationalStatus
-                'power_on_hours' = $smart.PowerOnHours
-                'temperature' = $smart.Temperature
-                'wear' = $smart.Wear
+            try {
+                $disk = Get-PhysicalDisk -DeviceNumber $DeviceNumber
+                
+                $result = @{
+                    'model' = $disk.FriendlyName
+                    'serial' = $disk.SerialNumber
+                    'health_status' = $disk.HealthStatus.ToString()
+                    'operational_status' = $disk.OperationalStatus.ToString()
+                    'media_type' = $disk.MediaType.ToString()
+                    'bus_type' = $disk.BusType.ToString()
+                    'size_bytes' = $disk.Size
+                }
+                
+                # Versuche StorageReliabilityCounter zu lesen (funktioniert nicht immer)
+                try {
+                    $smart = Get-StorageReliabilityCounter -PhysicalDisk $disk -ErrorAction SilentlyContinue
+                    if ($smart) {
+                        $result['power_on_hours'] = $smart.PowerOnHours
+                        $result['temperature'] = $smart.Temperature
+                        $result['wear'] = $smart.Wear
+                        $result['read_errors'] = $smart.ReadErrorsTotal
+                        $result['write_errors'] = $smart.WriteErrorsTotal
+                    }
+                } catch {
+                    # Ignoriere Fehler beim Lesen der Reliability-Daten
+                }
+                
+                $result | ConvertTo-Json
+            } catch {
+                @{'error' = $_.Exception.Message} | ConvertTo-Json
             }
-            
-            $result | ConvertTo-Json
             """
             
             result = subprocess.run(
                 ['powershell', '-Command', ps_script, '-DeviceNumber', disk_num],
                 capture_output=True,
-                text=True
+                text=True,
+                timeout=10
             )
             
-            data = json.loads(result.stdout)
+            # Sichere Konvertierung der Werte
+            def safe_int(value):
+                """Konvertiert Wert sicher zu Int, gibt None zurück bei Fehler"""
+                if value is None or value == '':
+                    return None
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    return None
+            
+            # Parse JSON-Antwort
+            try:
+                data = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                return {
+                    'error': f'PowerShell-Antwort konnte nicht geparst werden',
+                    'raw_output': result.stdout,
+                    'raw_error': result.stderr
+                }
+            
+            # Prüfe auf Fehler in der Antwort
+            if 'error' in data:
+                return {'error': f'PowerShell-Fehler: {data["error"]}'}
             
             smart_info = {
                 'device': device_path,
                 'model': data.get('model', 'Unknown'),
                 'serial': data.get('serial', 'Unknown'),
                 'smart_status': data.get('health_status', 'Unknown'),
-                'power_on_hours': data.get('power_on_hours', 0),
-                'temperature': data.get('temperature', None),
-                'raw_data': json.dumps(data)
+                'health_status': data.get('health_status', 'Unknown'),
+                'operational_status': data.get('operational_status', 'Unknown'),
+                'media_type': data.get('media_type'),
+                'bus_type': data.get('bus_type'),
+                'size_bytes': safe_int(data.get('size_bytes')),
+                'power_on_hours': safe_int(data.get('power_on_hours')),
+                'temperature': safe_int(data.get('temperature')),
+                'wear': safe_int(data.get('wear')),
+                'read_errors': safe_int(data.get('read_errors')),
+                'write_errors': safe_int(data.get('write_errors')),
+                'raw_data': json.dumps(data, indent=2)
             }
             
             return smart_info
             
+        except subprocess.TimeoutExpired:
+            return {'error': 'PowerShell-Timeout: Vorgang dauerte zu lange'}
         except Exception as e:
             return {'error': f'Fehler beim Lesen der Windows SMART-Daten: {str(e)}'}
 
