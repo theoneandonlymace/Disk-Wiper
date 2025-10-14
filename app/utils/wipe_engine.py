@@ -177,9 +177,13 @@ class WipeEngine:
                 )
                 
             else:  # Linux/Unix
-                # Verwende dd mit Progress-Tracking (sichere Parameterübergabe)
+                # Verwende shred zum sicheren Löschen
+                # -v: verbose (zeigt Progress)
+                # -f: force (erlaubt Schreiben auf Device-Dateien)
+                # -n: Anzahl der Überschreibungen
+                # -z: Fügt einen finalen Pass mit Nullen hinzu
                 process = subprocess.Popen(
-                    ['dd', 'if=/dev/zero', f'of={device_path}', 'bs=1M', 'status=progress'],
+                    ['shred', '-vfz', '-n', str(passes), device_path],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True
@@ -207,7 +211,9 @@ class WipeEngine:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     stderr = "Prozess Timeout"
-                raise Exception(f"dd-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                
+                wipe_tool = "shred" if os.name != 'nt' else "PowerShell"
+                raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
 
     @staticmethod
     def _wipe_random(wipe_log_id, device_path, passes):
@@ -263,8 +269,10 @@ class WipeEngine:
                     raise Exception(f"Random Wipe fehlgeschlagen (Pass {pass_num + 1}): {str(e)}")
                     
             else:  # Linux/Unix
+                # Verwende shred mit Zufallsdaten
+                # --random-source=/dev/urandom: Verwendet kryptografisch starke Zufallsdaten
                 process = subprocess.Popen(
-                    ['dd', 'if=/dev/urandom', f'of={device_path}', 'bs=1M', 'status=progress'],
+                    ['shred', '-vf', '--random-source=/dev/urandom', '-n', str(passes), device_path],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True
@@ -288,7 +296,9 @@ class WipeEngine:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         stderr = "Prozess Timeout"
-                    raise Exception(f"dd-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                    
+                    wipe_tool = "shred" if os.name != 'nt' else "Python"
+                    raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
 
     @staticmethod
     def _wipe_dod(wipe_log_id, device_path):
