@@ -42,6 +42,7 @@ disk_wiper.db
 
 # IDE
 .vscode/
+Disk-Wiper.code-workspace
 .idea/
 *.swp
 *.swo
