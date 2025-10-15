@@ -16,5 +16,5 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or f'sqlite:///{db_path}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
-    MAX_WIPE_THREADS = 1  # Nur eine Disk gleichzeitig löschen
+    MAX_WIPE_THREADS = 4  # Mehrere Disks gleichzeitig löschen
 
