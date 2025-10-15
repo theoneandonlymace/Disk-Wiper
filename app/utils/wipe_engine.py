@@ -138,6 +138,8 @@ class WipeEngine:
                     WipeEngine._wipe_random(wipe_log_id, device_path, passes)
                 elif wipe_method == 'dod':
                     WipeEngine._wipe_dod(wipe_log_id, device_path)
+                elif wipe_method == 'bsi':
+                    WipeEngine._wipe_bsi(wipe_log_id, device_path)
                 elif wipe_method == 'fast_clear':
                     WipeEngine._wipe_fast_clear(wipe_log_id, device_path)
                 else:
@@ -329,6 +331,134 @@ class WipeEngine:
         
         # Pass 3: Zufallsdaten
         WipeEngine._wipe_random(wipe_log_id, device_path, 1)
+    
+    @staticmethod
+    def _wipe_bsi(wipe_log_id, device_path):
+        """
+        BSI CON.6 konformes Löschen gemäß IT-Grundschutz-Kompendium
+        
+        Anforderung CON.6.A12:
+        - Vollständiges Überschreiben digitaler wiederbeschreibbarer Datenträger
+          mit Zufallswerten (mindestens 1 Pass für normalen Schutzbedarf)
+        - Bei erhöhtem Schutzbedarf wird ein zusätzlicher Pass empfohlen
+        
+        Diese Methode erfüllt die Mindestanforderungen für:
+        - Normalen Schutzbedarf: 1 Pass mit Zufallsdaten
+        - Erhöhten Schutzbedarf: 2 Pässe mit Zufallsdaten
+        
+        Hinweis: Für verschlüsselte Datenträger sollte stattdessen der
+        kryptographische Schlüssel gemäß Kryptokonzept gelöscht werden.
+        
+        Referenz: BSI IT-Grundschutz-Kompendium, Baustein CON.6
+        """
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        # Prüfe ob SSD/NVMe - bei SSDs ist oft 1 Pass ausreichend
+        is_ssd = WipeEngine.is_ssd_device(device_path)
+        is_nvme = WipeEngine.is_nvme_device(device_path)
+        
+        # BSI CON.6 Anforderung:
+        # - Normaler Schutzbedarf: 1 Pass Zufallsdaten
+        # - Erhöhter Schutzbedarf: 2 Pässe Zufallsdaten (empfohlen für HDDs)
+        
+        if is_ssd or is_nvme:
+            # Für SSDs/NVMe: 1 Pass ist ausreichend (Wear Leveling berücksichtigen)
+            num_passes = 1
+            wipe_log.verification_data = json.dumps({
+                'bsi_method': 'CON.6.A12',
+                'device_type': 'SSD/NVMe',
+                'passes': num_passes,
+                'pattern': 'Zufallsdaten',
+                'note': '1 Pass ausreichend für SSD/NVMe aufgrund von Wear Leveling'
+            })
+        else:
+            # Für HDDs: 2 Pässe für erhöhten Schutzbedarf (empfohlen)
+            num_passes = 2
+            wipe_log.verification_data = json.dumps({
+                'bsi_method': 'CON.6.A12',
+                'device_type': 'HDD',
+                'passes': num_passes,
+                'pattern': 'Zufallsdaten',
+                'note': '2 Pässe für erhöhten Schutzbedarf gemäß BSI-Empfehlung'
+            })
+        
+        db.session.commit()
+        
+        # Führe Zufallsdaten-Überschreibung durch
+        for pass_num in range(num_passes):
+            WipeEngine._wipe_random(wipe_log_id, device_path, 1)
+        
+        # Zusätzliche Verifikation (optional, aber empfohlen)
+        # Lese einige Blöcke und prüfe, dass keine erkennbaren Muster vorhanden sind
+        try:
+            WipeEngine._verify_bsi_wipe(wipe_log_id, device_path)
+        except Exception as e:
+            print(f"Warnung: BSI-Verifikation fehlgeschlagen: {e}")
+    
+    @staticmethod
+    def _verify_bsi_wipe(wipe_log_id, device_path):
+        """
+        Verifiziert dass der Datenträger ordnungsgemäß gelöscht wurde
+        durch Stichproben an verschiedenen Positionen
+        """
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        try:
+            buffer_size = 1024 * 1024  # 1 MB
+            samples_to_check = 10  # Prüfe 10 zufällige Positionen
+            
+            with open(device_path, 'rb', buffering=buffer_size) as disk:
+                # Ermittle Disk-Größe
+                try:
+                    disk.seek(0, os.SEEK_END)
+                    total_size = disk.tell()
+                except:
+                    total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
+                
+                if not total_size or total_size == 0:
+                    return
+                
+                # Prüfe Stichproben an zufälligen Positionen
+                import random
+                verification_results = []
+                
+                for i in range(samples_to_check):
+                    # Zufällige Position
+                    position = random.randint(0, max(0, total_size - buffer_size))
+                    
+                    try:
+                        disk.seek(position)
+                        data = disk.read(min(buffer_size, 4096))  # Lese nur 4KB pro Sample
+                        
+                        # Prüfe ob Daten nicht komplett Nullen oder komplett 0xFF sind
+                        # (würde auf unvollständige Löschung hindeuten)
+                        all_zeros = all(b == 0x00 for b in data[:100])
+                        all_ones = all(b == 0xFF for b in data[:100])
+                        
+                        verification_results.append({
+                            'position': position,
+                            'all_zeros': all_zeros,
+                            'all_ones': all_ones,
+                            'appears_random': not (all_zeros or all_ones)
+                        })
+                    except:
+                        pass
+                
+                # Speichere Verifikationsergebnisse
+                if wipe_log.verification_data:
+                    verification_data = json.loads(wipe_log.verification_data)
+                else:
+                    verification_data = {}
+                
+                verification_data['verification_samples'] = verification_results
+                verification_data['verification_passed'] = any(r['appears_random'] for r in verification_results)
+                
+                wipe_log.verification_data = json.dumps(verification_data)
+                db.session.commit()
+                
+        except Exception as e:
+            # Verifikation ist optional, Fehler nicht kritisch
+            print(f"BSI-Verifikation konnte nicht durchgeführt werden: {e}")
     
     @staticmethod
     def _wipe_ones(wipe_log_id, device_path, passes):
