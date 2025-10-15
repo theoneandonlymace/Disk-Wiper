@@ -100,6 +100,11 @@ class ReportGenerator:
             margin: 0 0 10px 0;
             color: #1e40af;
         }}
+        .header p {{
+            color: #4b5563;
+            font-size: 15px;
+            margin: 8px 0;
+        }}
         .status-badge {{
             display: inline-block;
             padding: 6px 16px;
@@ -133,6 +138,14 @@ class ReportGenerator:
         }}
         .info-value {{
             color: #1f2937;
+        }}
+        .datetime-value {{
+            color: #1f2937;
+            font-family: 'Courier New', monospace;
+            font-weight: 500;
+            background: #f3f4f6;
+            padding: 2px 8px;
+            border-radius: 4px;
         }}
         .success {{
             color: green;
@@ -235,7 +248,7 @@ class ReportGenerator:
     <div class="report-container">
         <div class="header">
             <h1>🗑️ Disk Wipe Report</h1>
-            <p>Generiert am: {report_data['generated_at']}</p>
+            <p><strong>Generiert am:</strong> {ReportGenerator._format_datetime(datetime.now())}</p>
             <div class="status-badge">{wipe_log.status}</div>
         </div>
         
@@ -266,10 +279,10 @@ class ReportGenerator:
                 <div class="info-value">{wipe_log.wipe_passes}</div>
                 
                 <div class="info-label">Startzeit:</div>
-                <div class="info-value">{report_data['timing']['start_time'] or 'N/A'}</div>
+                <div class="datetime-value">{ReportGenerator._format_datetime(wipe_log.start_time)}</div>
                 
                 <div class="info-label">Endzeit:</div>
-                <div class="info-value">{report_data['timing']['end_time'] or 'N/A'}</div>
+                <div class="datetime-value">{ReportGenerator._format_datetime(wipe_log.end_time)}</div>
                 
                 <div class="info-label">Dauer:</div>
                 <div class="info-value">{report_data['timing']['duration_human']}</div>
@@ -485,4 +498,19 @@ class ReportGenerator:
             parts.append(f"{secs}s")
         
         return " ".join(parts)
+    
+    @staticmethod
+    def _format_datetime(dt):
+        """Formatiert Datum und Uhrzeit im deutschen Format"""
+        if not dt:
+            return 'N/A'
+        
+        if isinstance(dt, str):
+            try:
+                dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
+            except:
+                return dt
+        
+        # Formatiere im deutschen Format: TT.MM.JJJJ, HH:MM:SS Uhr
+        return dt.strftime('%d.%m.%Y um %H:%M:%S Uhr')
 
