@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 import json
+from weasyprint import HTML
+import io
 
 
 class ReportGenerator:
@@ -57,7 +59,20 @@ class ReportGenerator:
         return report
 
     @staticmethod
-    def generate_html_report(wipe_log):
+    def generate_pdf_report(wipe_log):
+        """Erstellt einen PDF-Report für einen Wipe-Vorgang"""
+        # Generiere HTML mit PDF-spezifischen Styles (Seitenumbruch)
+        html_content = ReportGenerator.generate_html_report(wipe_log, for_pdf=True)
+        
+        # Konvertiere HTML zu PDF
+        pdf_file = io.BytesIO()
+        HTML(string=html_content).write_pdf(pdf_file)
+        pdf_file.seek(0)
+        
+        return pdf_file
+
+    @staticmethod
+    def generate_html_report(wipe_log, for_pdf=False):
         """Erstellt einen HTML-Report für einen Wipe-Vorgang"""
         
         report_data = ReportGenerator.generate_wipe_report(wipe_log)
@@ -242,6 +257,18 @@ class ReportGenerator:
             font-size: 13px;
             line-height: 1.5;
         }}
+        {f'''
+        /* PDF-spezifische Styles */
+        .smart-section {{
+            page-break-before: always;
+            break-before: page;
+        }}
+        @media print {{
+            .smart-section {{
+                page-break-before: always;
+            }}
+        }}
+        ''' if for_pdf else ''}
     </style>
 </head>
 <body>
@@ -338,7 +365,7 @@ class ReportGenerator:
         raw_data_html = ReportGenerator._generate_raw_smart_data(smart_before, smart_after)
         
         return f"""
-        <div class="section">
+        <div class="section smart-section">
             <div class="section-title">📊 SMART-Daten Vergleich</div>
             {table_html}
             {raw_data_html}

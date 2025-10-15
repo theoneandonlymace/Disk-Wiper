@@ -273,6 +273,15 @@ def get_wipe_report(wipe_id):
         if report_format == 'html':
             html = ReportGenerator.generate_html_report(wipe)
             return html
+        elif report_format == 'pdf':
+            pdf_file = ReportGenerator.generate_pdf_report(wipe)
+            filename = f"wipe_report_{wipe.serial_number}_{wipe.id}.pdf"
+            return send_file(
+                pdf_file,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=filename
+            )
         else:
             report = ReportGenerator.generate_wipe_report(wipe)
             return jsonify({
