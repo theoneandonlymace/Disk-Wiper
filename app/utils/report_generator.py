@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import json
-from weasyprint import HTML
+from xhtml2pdf import pisa
 import io
 
 
@@ -64,11 +64,18 @@ class ReportGenerator:
         # Generiere HTML mit PDF-spezifischen Styles (Seitenumbruch)
         html_content = ReportGenerator.generate_html_report(wipe_log, for_pdf=True)
         
-        # Konvertiere HTML zu PDF
+        # Konvertiere HTML zu PDF mit xhtml2pdf
         pdf_file = io.BytesIO()
-        HTML(string=html_content).write_pdf(pdf_file)
-        pdf_file.seek(0)
+        pisa_status = pisa.CreatePDF(
+            src=io.BytesIO(html_content.encode('utf-8')),
+            dest=pdf_file,
+            encoding='utf-8'
+        )
         
+        if pisa_status.err:
+            raise Exception(f"Fehler bei der PDF-Generierung: {pisa_status.err}")
+        
+        pdf_file.seek(0)
         return pdf_file
 
     @staticmethod
