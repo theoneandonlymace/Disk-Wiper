@@ -145,86 +145,65 @@ class WipeEngine:
         for pass_num in range(passes):
             wipe_log = WipeLog.query.get(wipe_log_id)
             
-            # dd-Befehl zum Überschreiben mit Nullen
-            # HINWEIS: Dies ist eine vereinfachte Implementierung
-            # In Produktion sollte eine robustere Lösung verwendet werden
-            
-            if os.name == 'nt':  # Windows
-                # Windows: Verwende PowerShell mit sicherer Parameter-Übergabe
-                ps_script = """
-                param([string]$DevicePath)
-                $bufferSize = 1MB
-                $buffer = New-Object byte[] $bufferSize
+            # Direkter Python-Ansatz für präzises Progress-Tracking
+            try:
+                buffer_size = 1024 * 1024  # 1MB
+                buffer = bytes(buffer_size)  # Nullen
                 
-                $stream = [System.IO.File]::OpenWrite($DevicePath)
-                $totalSize = $stream.Length
-                $written = 0
+                with open(device_path, 'wb', buffering=buffer_size) as disk:
+                    bytes_written = 0
+                    
+                    # Versuche die Disk-Größe zu ermitteln
+                    try:
+                        disk.seek(0, os.SEEK_END)
+                        total_size = disk.tell()
+                        disk.seek(0)
+                    except:
+                        # Wenn Größe nicht ermittelbar, verwende Größe aus WipeLog
+                        total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
+                    
+                    # Schreibe Nullen bis die Disk voll ist
+                    last_update_percent = -1
+                    while True:
+                        try:
+                            disk.write(buffer)
+                            bytes_written += buffer_size
+                            
+                            # Update Progress bei jedem Prozent
+                            if total_size and total_size > 0:
+                                current_pass_progress = bytes_written / total_size
+                                total_progress = ((pass_num + current_pass_progress) / passes) * 100
+                                
+                                # Nur updaten wenn sich der Prozentsatz geändert hat
+                                current_percent = int(total_progress)
+                                if current_percent != last_update_percent:
+                                    wipe_log.progress_percent = min(total_progress, 99.9)
+                                    db.session.commit()
+                                    
+                                    if device_path in WipeEngine.active_wipes:
+                                        WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
+                                    
+                                    last_update_percent = current_percent
+                        
+                        except IOError as e:
+                            # Disk ist voll - das ist normal und bedeutet erfolgreicher Abschluss
+                            if e.errno == 28:  # ENOSPC - No space left on device
+                                break
+                            else:
+                                raise
                 
-                try {
-                    while ($written -lt $totalSize) {
-                        $stream.Write($buffer, 0, $buffer.Length)
-                        $written += $buffer.Length
-                    }
-                } finally {
-                    $stream.Close()
-                }
-                """
-                
-                process = subprocess.Popen(
-                    ['powershell', '-Command', ps_script, '-DevicePath', device_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-            else:  # Linux/Unix
-                # Verwende shred zum sicheren Löschen
-                # -v: verbose (zeigt Progress)
-                # -f: force (erlaubt Schreiben auf Device-Dateien)
-                # -n: Anzahl der Überschreibungen
-                # -z: Fügt einen finalen Pass mit Nullen hinzu
-                process = subprocess.Popen(
-                    ['shred', '-vfz', '-n', str(passes), device_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-            
-            # Warte auf Abschluss und update Progress
-            while process.poll() is None:
-                time.sleep(5)
-                
-                # Update Progress (vereinfacht)
-                progress = ((pass_num + 0.5) / passes) * 100
-                wipe_log.progress_percent = progress
-                db.session.commit()
-                
-                # Update active_wipes
-                if device_path in WipeEngine.active_wipes:
-                    WipeEngine.active_wipes[device_path]['progress'] = progress
-            
-            # Prüfe Return-Code und hole stderr Output
-            if process.returncode != 0:
-                # Verwende communicate() um Deadlocks zu vermeiden
-                try:
-                    stdout_data, stderr_data = process.communicate(timeout=5)
-                    stderr = stderr_data if stderr_data else ""
-                    stdout = stdout_data if stdout_data else ""
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    stderr = "Prozess Timeout"
-                    stdout = ""
-                
-                # "No space left on device" ist bei vollständigem Überschreiben normal und kein Fehler
-                # Das bedeutet, dass die gesamte Festplatte erfolgreich überschrieben wurde
+            except Exception as e:
+                # Prüfe ob es der normale "disk voll" Fehler ist
+                error_msg = str(e)
                 is_normal_completion = (
-                    "No space left on device" in stderr or
-                    "kein Speicherplatz mehr verfügbar" in stderr or
-                    "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in stderr
+                    "No space left on device" in error_msg or
+                    "kein Speicherplatz mehr verfügbar" in error_msg or
+                    "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in error_msg or
+                    (hasattr(e, 'errno') and e.errno == 28)
                 )
                 
                 if not is_normal_completion:
-                    wipe_tool = "shred" if os.name != 'nt' else "PowerShell"
-                    raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                    raise Exception(f"Wipe-Befehl fehlgeschlagen (Pass {pass_num + 1}): {error_msg}")
 
     @staticmethod
     def _wipe_random(wipe_log_id, device_path, passes):
@@ -233,94 +212,66 @@ class WipeEngine:
         for pass_num in range(passes):
             wipe_log = WipeLog.query.get(wipe_log_id)
             
-            if os.name == 'nt':  # Windows
-                # Windows: Direkter Python-Ansatz mit os.urandom (plattformunabhängig)
-                try:
-                    buffer_size = 1024 * 1024  # 1MB
+            # Direkter Python-Ansatz mit os.urandom für präzises Progress-Tracking
+            try:
+                buffer_size = 1024 * 1024  # 1MB
+                
+                with open(device_path, 'wb', buffering=buffer_size) as disk:
+                    bytes_written = 0
                     
-                    with open(device_path, 'wb', buffering=buffer_size) as disk:
-                        bytes_written = 0
-                        # Versuche die Disk-Größe zu ermitteln
+                    # Versuche die Disk-Größe zu ermitteln
+                    try:
+                        disk.seek(0, os.SEEK_END)
+                        total_size = disk.tell()
+                        disk.seek(0)
+                    except:
+                        # Wenn Größe nicht ermittelbar, verwende Größe aus WipeLog
+                        total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
+                    
+                    # Schreibe Zufallsdaten bis die Disk voll ist
+                    last_update_percent = -1
+                    while True:
                         try:
-                            disk.seek(0, os.SEEK_END)
-                            total_size = disk.tell()
-                            disk.seek(0)
-                        except:
-                            total_size = None
-                        
-                        # Schreibe Zufallsdaten bis die Disk voll ist
-                        while True:
-                            try:
-                                # Generiere Zufallsdaten
-                                random_buffer = os.urandom(buffer_size)
-                                disk.write(random_buffer)
-                                bytes_written += buffer_size
+                            # Generiere Zufallsdaten
+                            random_buffer = os.urandom(buffer_size)
+                            disk.write(random_buffer)
+                            bytes_written += buffer_size
+                            
+                            # Update Progress bei jedem Prozent
+                            if total_size and total_size > 0:
+                                current_pass_progress = bytes_written / total_size
+                                total_progress = ((pass_num + current_pass_progress) / passes) * 100
                                 
-                                # Update Progress alle 100MB
-                                if bytes_written % (100 * 1024 * 1024) == 0:
-                                    if total_size:
-                                        progress = ((pass_num + (bytes_written / total_size)) / passes) * 100
-                                    else:
-                                        progress = ((pass_num + 0.5) / passes) * 100
-                                    
-                                    wipe_log.progress_percent = min(progress, 99.9)
+                                # Nur updaten wenn sich der Prozentsatz geändert hat
+                                current_percent = int(total_progress)
+                                if current_percent != last_update_percent:
+                                    wipe_log.progress_percent = min(total_progress, 99.9)
                                     db.session.commit()
                                     
                                     if device_path in WipeEngine.active_wipes:
                                         WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
-                            
-                            except IOError as e:
-                                # Disk ist voll - das ist normal
-                                if e.errno == 28:  # ENOSPC - No space left on device
-                                    break
-                                else:
-                                    raise
-                    
-                except Exception as e:
-                    raise Exception(f"Random Wipe fehlgeschlagen (Pass {pass_num + 1}): {str(e)}")
-                    
-            else:  # Linux/Unix
-                # Verwende shred mit Zufallsdaten
-                # --random-source=/dev/urandom: Verwendet kryptografisch starke Zufallsdaten
-                process = subprocess.Popen(
-                    ['shred', '-vf', '--random-source=/dev/urandom', '-n', str(passes), device_path],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
+                                    
+                                    last_update_percent = current_percent
+                        
+                        except IOError as e:
+                            # Disk ist voll - das ist normal und bedeutet erfolgreicher Abschluss
+                            if e.errno == 28:  # ENOSPC - No space left on device
+                                break
+                            else:
+                                raise
+                
+            except Exception as e:
+                # Prüfe ob es der normale "disk voll" Fehler ist
+                error_msg = str(e)
+                is_normal_completion = (
+                    "No space left on device" in error_msg or
+                    "kein Speicherplatz mehr verfügbar" in error_msg or
+                    "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in error_msg or
+                    (hasattr(e, 'errno') and e.errno == 28)
                 )
                 
-                while process.poll() is None:
-                    time.sleep(5)
-                    progress = ((pass_num + 0.5) / passes) * 100
-                    wipe_log.progress_percent = progress
-                    db.session.commit()
-                    
-                    if device_path in WipeEngine.active_wipes:
-                        WipeEngine.active_wipes[device_path]['progress'] = progress
-                
-                # Prüfe Return-Code und hole stderr Output
-                if process.returncode != 0:
-                    # Verwende communicate() um Deadlocks zu vermeiden
-                    try:
-                        stdout_data, stderr_data = process.communicate(timeout=5)
-                        stderr = stderr_data if stderr_data else ""
-                        stdout = stdout_data if stdout_data else ""
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        stderr = "Prozess Timeout"
-                        stdout = ""
-                    
-                    # "No space left on device" ist bei vollständigem Überschreiben normal und kein Fehler
-                    # Das bedeutet, dass die gesamte Festplatte erfolgreich überschrieben wurde
-                    is_normal_completion = (
-                        "No space left on device" in stderr or
-                        "kein Speicherplatz mehr verfügbar" in stderr or
-                        "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in stderr
-                    )
-                    
-                    if not is_normal_completion:
-                        wipe_tool = "shred" if os.name != 'nt' else "Python"
-                        raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                if not is_normal_completion:
+                    raise Exception(f"Random Wipe fehlgeschlagen (Pass {pass_num + 1}): {error_msg}")
 
     @staticmethod
     def _wipe_dod(wipe_log_id, device_path):
@@ -347,49 +298,65 @@ class WipeEngine:
         for pass_num in range(passes):
             wipe_log = WipeLog.query.get(wipe_log_id)
             
-            # Direkter Python-Ansatz ohne externe Prozesse (sicherer)
+            # Direkter Python-Ansatz für präzises Progress-Tracking
             try:
                 buffer_size = 1024 * 1024  # 1MB
                 buffer = bytes([0xFF]) * buffer_size
                 
                 with open(device_path, 'wb', buffering=buffer_size) as disk:
                     bytes_written = 0
+                    
                     # Versuche die Disk-Größe zu ermitteln
                     try:
                         disk.seek(0, os.SEEK_END)
                         total_size = disk.tell()
                         disk.seek(0)
                     except:
-                        total_size = None
+                        # Wenn Größe nicht ermittelbar, verwende Größe aus WipeLog
+                        total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
                     
                     # Schreibe 0xFF bis die Disk voll ist
+                    last_update_percent = -1
                     while True:
                         try:
                             disk.write(buffer)
                             bytes_written += buffer_size
                             
-                            # Update Progress alle 100MB
-                            if bytes_written % (100 * 1024 * 1024) == 0:
-                                if total_size:
-                                    progress = ((pass_num + (bytes_written / total_size)) / passes) * 100
-                                else:
-                                    progress = ((pass_num + 0.5) / passes) * 100
+                            # Update Progress bei jedem Prozent
+                            if total_size and total_size > 0:
+                                current_pass_progress = bytes_written / total_size
+                                total_progress = ((pass_num + current_pass_progress) / passes) * 100
                                 
-                                wipe_log.progress_percent = min(progress, 99.9)
-                                db.session.commit()
-                                
-                                if device_path in WipeEngine.active_wipes:
-                                    WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
+                                # Nur updaten wenn sich der Prozentsatz geändert hat
+                                current_percent = int(total_progress)
+                                if current_percent != last_update_percent:
+                                    wipe_log.progress_percent = min(total_progress, 99.9)
+                                    db.session.commit()
+                                    
+                                    if device_path in WipeEngine.active_wipes:
+                                        WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
+                                    
+                                    last_update_percent = current_percent
                         
                         except IOError as e:
-                            # Disk ist voll - das ist normal
+                            # Disk ist voll - das ist normal und bedeutet erfolgreicher Abschluss
                             if e.errno == 28:  # ENOSPC - No space left on device
                                 break
                             else:
                                 raise
                 
             except Exception as e:
-                raise Exception(f"Wipe-Befehl fehlgeschlagen (Pass {pass_num + 1}): {str(e)}")
+                # Prüfe ob es der normale "disk voll" Fehler ist
+                error_msg = str(e)
+                is_normal_completion = (
+                    "No space left on device" in error_msg or
+                    "kein Speicherplatz mehr verfügbar" in error_msg or
+                    "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in error_msg or
+                    (hasattr(e, 'errno') and e.errno == 28)
+                )
+                
+                if not is_normal_completion:
+                    raise Exception(f"Wipe-Befehl fehlgeschlagen (Pass {pass_num + 1}): {error_msg}")
 
     @staticmethod
     def get_wipe_status(wipe_log_id):
