@@ -1,7 +1,13 @@
 from datetime import datetime, timezone
 import json
-from xhtml2pdf import pisa
 import io
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 
 class ReportGenerator:
@@ -60,22 +66,197 @@ class ReportGenerator:
 
     @staticmethod
     def generate_pdf_report(wipe_log):
-        """Erstellt einen PDF-Report für einen Wipe-Vorgang"""
-        # Generiere HTML mit PDF-spezifischen Styles (Seitenumbruch)
-        html_content = ReportGenerator.generate_html_report(wipe_log, for_pdf=True)
-        
-        # Konvertiere HTML zu PDF mit xhtml2pdf
+        """Erstellt einen PDF-Report für einen Wipe-Vorgang mit ReportLab"""
         pdf_file = io.BytesIO()
-        pisa_status = pisa.CreatePDF(
-            src=io.BytesIO(html_content.encode('utf-8')),
-            dest=pdf_file,
-            encoding='utf-8'
+        
+        # PDF-Dokument erstellen
+        doc = SimpleDocTemplate(
+            pdf_file,
+            pagesize=A4,
+            rightMargin=2*cm,
+            leftMargin=2*cm,
+            topMargin=2*cm,
+            bottomMargin=2*cm
         )
         
-        if pisa_status.err:
-            raise Exception(f"Fehler bei der PDF-Generierung: {pisa_status.err}")
+        # Styles
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            textColor=colors.HexColor('#1e40af'),
+            spaceAfter=30,
+            alignment=1  # Center
+        )
+        heading_style = ParagraphStyle(
+            'CustomHeading',
+            parent=styles['Heading2'],
+            fontSize=16,
+            textColor=colors.HexColor('#1e40af'),
+            spaceAfter=12,
+            borderColor=colors.HexColor('#e5e7eb'),
+            borderWidth=0,
+            borderPadding=5
+        )
         
+        # Story (Inhalt des PDFs)
+        story = []
+        
+        # Titel
+        story.append(Paragraph('Disk Wipe Report', title_style))
+        story.append(Spacer(1, 0.5*cm))
+        
+        # Generierungsdatum und Status
+        status_color = {
+            'completed': colors.green,
+            'failed': colors.red,
+            'in_progress': colors.blue,
+            'pending': colors.grey
+        }.get(wipe_log.status, colors.grey)
+        
+        info_data = [
+            ['Generiert am:', ReportGenerator._format_datetime(datetime.now())],
+            ['Status:', wipe_log.status.upper()],
+        ]
+        info_table = Table(info_data, colWidths=[4*cm, 12*cm])
+        info_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (1, 1), (1, 1), status_color),
+            ('FONTNAME', (1, 1), (1, 1), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 0.8*cm))
+        
+        # Festplatten-Informationen
+        story.append(Paragraph('Festplatten-Informationen', heading_style))
+        disk_data = [
+            ['Modell:', wipe_log.model or 'N/A'],
+            ['Seriennummer:', wipe_log.serial_number],
+            ['Device Path:', wipe_log.device_path],
+            ['Größe:', ReportGenerator._format_size(wipe_log.size_bytes) if wipe_log.size_bytes else 'N/A'],
+        ]
+        disk_table = Table(disk_data, colWidths=[4*cm, 12*cm])
+        disk_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#4b5563')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f9fafb')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+        ]))
+        story.append(disk_table)
+        story.append(Spacer(1, 0.8*cm))
+        
+        # Wipe-Vorgang
+        story.append(Paragraph('Wipe-Vorgang', heading_style))
+        wipe_data = [
+            ['Methode:', wipe_log.wipe_method],
+            ['Anzahl Pässe:', str(wipe_log.wipe_passes)],
+            ['Startzeit:', ReportGenerator._format_datetime(wipe_log.start_time)],
+            ['Endzeit:', ReportGenerator._format_datetime(wipe_log.end_time)],
+            ['Dauer:', ReportGenerator._format_duration(wipe_log.duration_seconds) if wipe_log.duration_seconds else 'N/A'],
+            ['Verifiziert:', '✓ Ja' if wipe_log.verified else '✗ Nein'],
+        ]
+        wipe_table = Table(wipe_data, colWidths=[4*cm, 12*cm])
+        wipe_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#4b5563')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f9fafb')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+            ('TEXTCOLOR', (1, 5), (1, 5), colors.green if wipe_log.verified else colors.grey),
+        ]))
+        story.append(wipe_table)
+        
+        # Fehler falls vorhanden
+        if wipe_log.error_message:
+            story.append(Spacer(1, 0.8*cm))
+            story.append(Paragraph('Fehler', heading_style))
+            error_para = Paragraph(f'<para textColor="red">{wipe_log.error_message}</para>', styles['Normal'])
+            story.append(error_para)
+        
+        # SMART-Daten auf neuer Seite
+        if wipe_log.smart_data_before or wipe_log.smart_data_after:
+            story.append(PageBreak())
+            story.append(Paragraph('SMART-Daten Vergleich', heading_style))
+            story.append(Spacer(1, 0.5*cm))
+            
+            # Parse SMART-Daten
+            smart_before = None
+            smart_after = None
+            
+            try:
+                if wipe_log.smart_data_before:
+                    smart_before = json.loads(wipe_log.smart_data_before)
+            except:
+                pass
+            
+            try:
+                if wipe_log.smart_data_after:
+                    smart_after = json.loads(wipe_log.smart_data_after)
+            except:
+                pass
+            
+            # SMART-Tabelle erstellen
+            smart_table_data = [['Attribut', 'Vor Wipe', 'Nach Wipe']]
+            
+            # Wichtige SMART-Attribute
+            attributes_to_show = [
+                ('model', 'Modell'),
+                ('serial', 'Seriennummer'),
+                ('smart_status', 'SMART Status'),
+                ('health_status', 'Gesundheit'),
+                ('power_on_hours', 'Betriebsstunden'),
+                ('power_cycle_count', 'Power Cycles'),
+                ('temperature', 'Temperatur'),
+            ]
+            
+            for key, label in attributes_to_show:
+                value_before = smart_before.get(key) if smart_before else 'N/A'
+                value_after = smart_after.get(key) if smart_after else 'N/A'
+                
+                if value_before == 'N/A' and value_after == 'N/A':
+                    continue
+                
+                smart_table_data.append([
+                    label,
+                    str(value_before) if value_before else 'N/A',
+                    str(value_after) if value_after else 'N/A'
+                ])
+            
+            if len(smart_table_data) > 1:
+                smart_table = Table(smart_table_data, colWidths=[5*cm, 5.5*cm, 5.5*cm])
+                smart_table.setStyle(TableStyle([
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, -1), 9),
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 1), (0, -1), 'Helvetica-Bold'),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f9fafb')),
+                    ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e5e7eb')),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ]))
+                story.append(smart_table)
+        
+        # Footer
+        story.append(Spacer(1, 1*cm))
+        footer_text = f'Dieser Report wurde automatisch vom Disk Wiper Tool generiert. | Report ID: {wipe_log.id}'
+        footer_para = Paragraph(f'<para alignment="center" fontSize="8" textColor="#6b7280">{footer_text}</para>', styles['Normal'])
+        story.append(footer_para)
+        
+        # PDF bauen
+        doc.build(story)
         pdf_file.seek(0)
+        
         return pdf_file
 
     @staticmethod
