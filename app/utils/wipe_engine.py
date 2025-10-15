@@ -208,12 +208,23 @@ class WipeEngine:
                 try:
                     stdout_data, stderr_data = process.communicate(timeout=5)
                     stderr = stderr_data if stderr_data else ""
+                    stdout = stdout_data if stdout_data else ""
                 except subprocess.TimeoutExpired:
                     process.kill()
                     stderr = "Prozess Timeout"
+                    stdout = ""
                 
-                wipe_tool = "shred" if os.name != 'nt' else "PowerShell"
-                raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                # "No space left on device" ist bei vollständigem Überschreiben normal und kein Fehler
+                # Das bedeutet, dass die gesamte Festplatte erfolgreich überschrieben wurde
+                is_normal_completion = (
+                    "No space left on device" in stderr or
+                    "kein Speicherplatz mehr verfügbar" in stderr or
+                    "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in stderr
+                )
+                
+                if not is_normal_completion:
+                    wipe_tool = "shred" if os.name != 'nt' else "PowerShell"
+                    raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
 
     @staticmethod
     def _wipe_random(wipe_log_id, device_path, passes):
@@ -293,12 +304,23 @@ class WipeEngine:
                     try:
                         stdout_data, stderr_data = process.communicate(timeout=5)
                         stderr = stderr_data if stderr_data else ""
+                        stdout = stdout_data if stdout_data else ""
                     except subprocess.TimeoutExpired:
                         process.kill()
                         stderr = "Prozess Timeout"
+                        stdout = ""
                     
-                    wipe_tool = "shred" if os.name != 'nt' else "Python"
-                    raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
+                    # "No space left on device" ist bei vollständigem Überschreiben normal und kein Fehler
+                    # Das bedeutet, dass die gesamte Festplatte erfolgreich überschrieben wurde
+                    is_normal_completion = (
+                        "No space left on device" in stderr or
+                        "kein Speicherplatz mehr verfügbar" in stderr or
+                        "Auf dem Gerät ist kein Speicherplatz mehr verfügbar" in stderr
+                    )
+                    
+                    if not is_normal_completion:
+                        wipe_tool = "shred" if os.name != 'nt' else "Python"
+                        raise Exception(f"{wipe_tool}-Befehl fehlgeschlagen (Pass {pass_num + 1}): {stderr}")
 
     @staticmethod
     def _wipe_dod(wipe_log_id, device_path):
