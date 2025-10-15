@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 
@@ -510,6 +510,11 @@ class ReportGenerator:
                 dt = datetime.fromisoformat(dt.replace('Z', '+00:00'))
             except:
                 return dt
+        
+        # Wenn das datetime-Objekt naive ist (keine Timezone), behandle es als UTC
+        if dt.tzinfo is None:
+            # Nehme an, es ist UTC und konvertiere zur lokalen Zeit
+            dt = dt.replace(tzinfo=timezone.utc).astimezone()
         
         # Formatiere im deutschen Format: TT.MM.JJJJ, HH:MM:SS Uhr
         return dt.strftime('%d.%m.%Y um %H:%M:%S Uhr')

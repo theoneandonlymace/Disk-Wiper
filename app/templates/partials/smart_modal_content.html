@@ -250,7 +250,7 @@
 
     <!-- Timestamp -->
     <div class="text-xs text-gray-500 dark:text-gray-400 text-center pt-2 border-t border-gray-200 dark:border-gray-700">
-        <p>Zuletzt aktualisiert: {{ disk.last_seen.strftime('%d.%m.%Y %H:%M:%S') if disk.last_seen else 'Unbekannt' }}</p>
+        <p>Zuletzt aktualisiert: {{ disk.last_seen|localtime|strftime('%d.%m.%Y um %H:%M:%S Uhr') if disk.last_seen else 'Unbekannt' }}</p>
     </div>
     
     {% endif %}
