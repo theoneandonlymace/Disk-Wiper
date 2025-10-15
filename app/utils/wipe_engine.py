@@ -2,11 +2,13 @@ import os
 import subprocess
 import threading
 import time
+import json
 from datetime import datetime
 from flask import current_app
 from app import db
 from app.models import WipeLog
 from app.utils.disk_manager import DiskManager
+from app.utils.smart_reader import SmartReader
 
 
 class WipeEngine:
@@ -145,6 +147,15 @@ class WipeEngine:
                 end_time = datetime.utcnow()
                 duration = (end_time - wipe_log.start_time).total_seconds()
                 
+                # Lese SMART-Daten nach dem Wipe aus
+                try:
+                    smart_data_after = SmartReader.get_smart_data(device_path)
+                    if smart_data_after and 'error' not in smart_data_after:
+                        wipe_log.smart_data_after = json.dumps(smart_data_after)
+                except Exception as e:
+                    # Fehler beim Lesen der SMART-Daten ignorieren (nicht kritisch)
+                    print(f"Warnung: SMART-Daten nach Wipe konnten nicht gelesen werden: {e}")
+                
                 wipe_log.status = 'completed'
                 wipe_log.end_time = end_time
                 wipe_log.duration_seconds = int(duration)
@@ -241,30 +252,30 @@ class WipeEngine:
             wipe_log = WipeLog.query.get(wipe_log_id)
             
             # Direkter Python-Ansatz mit os.urandom für präzises Progress-Tracking
-                try:
-                    buffer_size = 1024 * 1024  # 1MB
-                    
-                    with open(device_path, 'wb', buffering=buffer_size) as disk:
-                        bytes_written = 0
-                    
-                        # Versuche die Disk-Größe zu ermitteln
-                        try:
-                            disk.seek(0, os.SEEK_END)
-                            total_size = disk.tell()
-                            disk.seek(0)
-                        except:
+            try:
+                buffer_size = 1024 * 1024  # 1MB
+                
+                with open(device_path, 'wb', buffering=buffer_size) as disk:
+                    bytes_written = 0
+                
+                    # Versuche die Disk-Größe zu ermitteln
+                    try:
+                        disk.seek(0, os.SEEK_END)
+                        total_size = disk.tell()
+                        disk.seek(0)
+                    except:
                         # Wenn Größe nicht ermittelbar, verwende Größe aus WipeLog
                         total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
-                        
-                        # Schreibe Zufallsdaten bis die Disk voll ist
+                    
+                    # Schreibe Zufallsdaten bis die Disk voll ist
                     last_update_percent = -1
-                        while True:
-                            try:
-                                # Generiere Zufallsdaten
-                                random_buffer = os.urandom(buffer_size)
-                                disk.write(random_buffer)
-                                bytes_written += buffer_size
-                                
+                    while True:
+                        try:
+                            # Generiere Zufallsdaten
+                            random_buffer = os.urandom(buffer_size)
+                            disk.write(random_buffer)
+                            bytes_written += buffer_size
+                            
                             # Update Progress bei jedem Prozent
                             if total_size and total_size > 0:
                                 current_pass_progress = bytes_written / total_size
@@ -280,15 +291,15 @@ class WipeEngine:
                                         WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
                                     
                                     last_update_percent = current_percent
-                            
-                            except IOError as e:
+                        
+                        except IOError as e:
                             # Disk ist voll - das ist normal und bedeutet erfolgreicher Abschluss
-                                if e.errno == 28:  # ENOSPC - No space left on device
-                                    break
-                                else:
-                                    raise
-                    
-                except Exception as e:
+                            if e.errno == 28:  # ENOSPC - No space left on device
+                                break
+                            else:
+                                raise
+                
+            except Exception as e:
                 # Prüfe ob es der normale "disk voll" Fehler ist
                 error_msg = str(e)
                 is_normal_completion = (

@@ -43,6 +43,13 @@ class ReportGenerator:
             except:
                 report['smart_data_before_wipe'] = wipe_log.smart_data_before
         
+        if wipe_log.smart_data_after:
+            try:
+                smart_data = json.loads(wipe_log.smart_data_after)
+                report['smart_data_after_wipe'] = smart_data
+            except:
+                report['smart_data_after_wipe'] = wipe_log.smart_data_after
+        
         # Fehler hinzufügen falls vorhanden
         if wipe_log.error_message:
             report['error'] = wipe_log.error_message
@@ -155,6 +162,73 @@ class ReportGenerator:
             max-height: 400px;
             overflow-y: auto;
         }}
+        .smart-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }}
+        .smart-table th {{
+            background: #2563eb;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: bold;
+        }}
+        .smart-table td {{
+            padding: 10px 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }}
+        .smart-table tr:hover {{
+            background: #f9fafb;
+        }}
+        .smart-table .attr-name {{
+            font-weight: 600;
+            color: #374151;
+        }}
+        .smart-value-changed {{
+            background: #fef3c7;
+            font-weight: bold;
+        }}
+        .smart-value-improved {{
+            color: #059669;
+        }}
+        .smart-value-degraded {{
+            color: #dc2626;
+        }}
+        details {{
+            margin-top: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 10px;
+            background: #f9fafb;
+        }}
+        summary {{
+            cursor: pointer;
+            font-weight: bold;
+            color: #2563eb;
+            padding: 8px;
+            user-select: none;
+        }}
+        summary:hover {{
+            background: #eff6ff;
+            border-radius: 4px;
+        }}
+        details[open] summary {{
+            margin-bottom: 15px;
+            border-bottom: 2px solid #e5e7eb;
+        }}
+        .raw-data {{
+            background: #1f2937;
+            color: #f3f4f6;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+        }}
     </style>
 </head>
 <body>
@@ -209,7 +283,7 @@ class ReportGenerator:
         
         {'<div class="section"><div class="section-title">Fehler</div><div class="error">' + wipe_log.error_message + '</div></div>' if wipe_log.error_message else ''}
         
-        {ReportGenerator._generate_smart_html_section(wipe_log.smart_data_before) if wipe_log.smart_data_before else ''}
+        {ReportGenerator._generate_smart_comparison_section(wipe_log.smart_data_before, wipe_log.smart_data_after) if (wipe_log.smart_data_before or wipe_log.smart_data_after) else ''}
         
         <div class="footer">
             <p>Dieser Report wurde automatisch vom Disk Wiper Tool generiert.</p>
@@ -223,25 +297,162 @@ class ReportGenerator:
         return html
 
     @staticmethod
-    def _generate_smart_html_section(smart_data_str):
-        """Generiert HTML-Abschnitt für SMART-Daten"""
-        if not smart_data_str:
+    def _generate_smart_comparison_section(smart_data_before_str, smart_data_after_str):
+        """Generiert HTML-Abschnitt mit SMART-Daten-Vergleich"""
+        if not smart_data_before_str and not smart_data_after_str:
             return ''
         
+        # Parse SMART-Daten
+        smart_before = None
+        smart_after = None
+        
         try:
-            smart_data = json.loads(smart_data_str)
-            smart_summary = json.dumps(smart_data, indent=2)
+            if smart_data_before_str:
+                smart_before = json.loads(smart_data_before_str)
         except:
-            smart_summary = smart_data_str
+            smart_before = {'raw': smart_data_before_str}
+        
+        try:
+            if smart_data_after_str:
+                smart_after = json.loads(smart_data_after_str)
+        except:
+            smart_after = {'raw': smart_data_after_str}
+        
+        # Generiere Tabellen-HTML
+        table_html = ReportGenerator._generate_smart_table(smart_before, smart_after)
+        
+        # Generiere Rohdaten-HTML (ausklappbar)
+        raw_data_html = ReportGenerator._generate_raw_smart_data(smart_before, smart_after)
         
         return f"""
         <div class="section">
-            <div class="section-title">SMART-Daten vor Wipe</div>
-            <div class="smart-data">
-                <pre>{smart_summary}</pre>
-            </div>
+            <div class="section-title">📊 SMART-Daten Vergleich</div>
+            {table_html}
+            {raw_data_html}
         </div>
         """
+    
+    @staticmethod
+    def _generate_smart_table(smart_before, smart_after):
+        """Generiert eine Vergleichstabelle für SMART-Werte"""
+        if not smart_before and not smart_after:
+            return '<p>Keine SMART-Daten verfügbar.</p>'
+        
+        # Wichtige SMART-Attribute zum Anzeigen
+        attributes_to_show = [
+            ('model', 'Modell'),
+            ('serial', 'Seriennummer'),
+            ('smart_status', 'SMART Status'),
+            ('health_status', 'Gesundheitsstatus'),
+            ('power_on_hours', 'Betriebsstunden'),
+            ('power_cycle_count', 'Power Cycle Count'),
+            ('temperature', 'Temperatur (°C)'),
+            ('wear', 'Abnutzung'),
+            ('read_errors', 'Lesefehler'),
+            ('write_errors', 'Schreibfehler'),
+        ]
+        
+        rows = []
+        for key, label in attributes_to_show:
+            value_before = smart_before.get(key) if smart_before else None
+            value_after = smart_after.get(key) if smart_after else None
+            
+            # Überspringe Zeilen wo beide Werte None/leer sind
+            if value_before is None and value_after is None:
+                continue
+            
+            # Formatiere Werte
+            value_before_str = ReportGenerator._format_smart_value(value_before)
+            value_after_str = ReportGenerator._format_smart_value(value_after)
+            
+            # Prüfe ob Wert sich geändert hat
+            changed = value_before != value_after and value_before is not None and value_after is not None
+            changed_class = 'smart-value-changed' if changed else ''
+            
+            rows.append(f"""
+                <tr>
+                    <td class="attr-name">{label}</td>
+                    <td>{value_before_str}</td>
+                    <td class="{changed_class}">{value_after_str}</td>
+                </tr>
+            """)
+        
+        # Wenn wir SMART-Attribute haben (z.B. von Linux), zeige diese auch
+        if smart_before and 'attributes' in smart_before:
+            for attr_name, attr_data in smart_before.get('attributes', {}).items():
+                value_before = attr_data.get('raw', attr_data.get('value', 'N/A'))
+                
+                value_after = 'N/A'
+                if smart_after and 'attributes' in smart_after:
+                    attr_after = smart_after.get('attributes', {}).get(attr_name, {})
+                    value_after = attr_after.get('raw', attr_after.get('value', 'N/A'))
+                
+                changed = value_before != value_after and value_before != 'N/A' and value_after != 'N/A'
+                changed_class = 'smart-value-changed' if changed else ''
+                
+                rows.append(f"""
+                    <tr>
+                        <td class="attr-name">{attr_name}</td>
+                        <td>{value_before}</td>
+                        <td class="{changed_class}">{value_after}</td>
+                    </tr>
+                """)
+        
+        if not rows:
+            return '<p>Keine vergleichbaren SMART-Daten verfügbar.</p>'
+        
+        return f"""
+        <table class="smart-table">
+            <thead>
+                <tr>
+                    <th>Attribut</th>
+                    <th>Vor Wipe</th>
+                    <th>Nach Wipe</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+        """
+    
+    @staticmethod
+    def _generate_raw_smart_data(smart_before, smart_after):
+        """Generiert ausklappbaren Bereich für Roh-SMART-Daten"""
+        sections = []
+        
+        if smart_before:
+            raw_before = json.dumps(smart_before, indent=2, ensure_ascii=False)
+            sections.append(f"""
+            <details>
+                <summary>🔍 Rohdaten vor Wipe anzeigen</summary>
+                <div class="raw-data">
+                    <pre>{raw_before}</pre>
+                </div>
+            </details>
+            """)
+        
+        if smart_after:
+            raw_after = json.dumps(smart_after, indent=2, ensure_ascii=False)
+            sections.append(f"""
+            <details>
+                <summary>🔍 Rohdaten nach Wipe anzeigen</summary>
+                <div class="raw-data">
+                    <pre>{raw_after}</pre>
+                </div>
+            </details>
+            """)
+        
+        return ''.join(sections)
+    
+    @staticmethod
+    def _format_smart_value(value):
+        """Formatiert einen SMART-Wert für die Anzeige"""
+        if value is None or value == '':
+            return 'N/A'
+        if isinstance(value, bool):
+            return '✓ Ja' if value else '✗ Nein'
+        return str(value)
 
     @staticmethod
     def _format_size(size_bytes):

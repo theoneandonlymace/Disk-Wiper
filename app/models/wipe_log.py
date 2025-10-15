@@ -14,8 +14,9 @@ class WipeLog(db.Model):
     serial_number = db.Column(db.String(255), nullable=False, index=True)
     size_bytes = db.Column(db.BigInteger)
     
-    # SMART Data before wipe
+    # SMART Data before and after wipe
     smart_data_before = db.Column(db.Text)  # JSON string
+    smart_data_after = db.Column(db.Text)  # JSON string
     
     # Wipe Details
     wipe_method = db.Column(db.String(100))  # e.g., "DoD 5220.22-M", "zeros", "random"
@@ -47,6 +48,7 @@ class WipeLog(db.Model):
             'serial_number': self.serial_number,
             'size_bytes': self.size_bytes,
             'smart_data_before': self.smart_data_before,
+            'smart_data_after': self.smart_data_after,
             'wipe_method': self.wipe_method,
             'wipe_passes': self.wipe_passes,
             'status': self.status,
