@@ -47,7 +47,7 @@ brew install smartmontools
 
 ### 1. Repository klonen
 ```bash
-git clone <repository-url>
+git clone https://github.com/theoneandonlymace/Disk-Wiper.git
 cd Disk-Wiper
 ```
 
