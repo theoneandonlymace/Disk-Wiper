@@ -17,6 +17,32 @@ class WipeEngine:
     wipe_lock = threading.Lock()
 
     @staticmethod
+    def is_nvme_device(device_path):
+        """Prüft ob es sich um ein NVMe-Gerät handelt"""
+        return 'nvme' in device_path.lower()
+    
+    @staticmethod
+    def is_ssd_device(device_path):
+        """Prüft ob es sich um eine SSD handelt (inkl. NVMe)"""
+        if WipeEngine.is_nvme_device(device_path):
+            return True
+        
+        if os.name != 'nt':  # Linux
+            try:
+                # Extrahiere Device-Name (z.B. 'sda' aus '/dev/sda')
+                device_name = device_path.split('/')[-1]
+                
+                # Prüfe rotational flag (0 = SSD, 1 = HDD)
+                rotational_path = f"/sys/block/{device_name}/queue/rotational"
+                if os.path.exists(rotational_path):
+                    with open(rotational_path, 'r') as f:
+                        return f.read().strip() == '0'
+            except:
+                pass
+        
+        return False
+
+    @staticmethod
     def start_wipe(disk_id, device_path, wipe_method='zeros', passes=1):
         """
         Startet einen Wipe-Vorgang
@@ -110,6 +136,8 @@ class WipeEngine:
                     WipeEngine._wipe_random(wipe_log_id, device_path, passes)
                 elif wipe_method == 'dod':
                     WipeEngine._wipe_dod(wipe_log_id, device_path)
+                elif wipe_method == 'fast_clear':
+                    WipeEngine._wipe_fast_clear(wipe_log_id, device_path)
                 else:
                     raise Exception(f"Unbekannte Wipe-Methode: {wipe_method}")
                 
@@ -213,30 +241,30 @@ class WipeEngine:
             wipe_log = WipeLog.query.get(wipe_log_id)
             
             # Direkter Python-Ansatz mit os.urandom für präzises Progress-Tracking
-            try:
-                buffer_size = 1024 * 1024  # 1MB
-                
-                with open(device_path, 'wb', buffering=buffer_size) as disk:
-                    bytes_written = 0
+                try:
+                    buffer_size = 1024 * 1024  # 1MB
                     
-                    # Versuche die Disk-Größe zu ermitteln
-                    try:
-                        disk.seek(0, os.SEEK_END)
-                        total_size = disk.tell()
-                        disk.seek(0)
-                    except:
+                    with open(device_path, 'wb', buffering=buffer_size) as disk:
+                        bytes_written = 0
+                    
+                        # Versuche die Disk-Größe zu ermitteln
+                        try:
+                            disk.seek(0, os.SEEK_END)
+                            total_size = disk.tell()
+                            disk.seek(0)
+                        except:
                         # Wenn Größe nicht ermittelbar, verwende Größe aus WipeLog
                         total_size = wipe_log.size_bytes if wipe_log.size_bytes else None
-                    
-                    # Schreibe Zufallsdaten bis die Disk voll ist
+                        
+                        # Schreibe Zufallsdaten bis die Disk voll ist
                     last_update_percent = -1
-                    while True:
-                        try:
-                            # Generiere Zufallsdaten
-                            random_buffer = os.urandom(buffer_size)
-                            disk.write(random_buffer)
-                            bytes_written += buffer_size
-                            
+                        while True:
+                            try:
+                                # Generiere Zufallsdaten
+                                random_buffer = os.urandom(buffer_size)
+                                disk.write(random_buffer)
+                                bytes_written += buffer_size
+                                
                             # Update Progress bei jedem Prozent
                             if total_size and total_size > 0:
                                 current_pass_progress = bytes_written / total_size
@@ -252,15 +280,15 @@ class WipeEngine:
                                         WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
                                     
                                     last_update_percent = current_percent
-                        
-                        except IOError as e:
+                            
+                            except IOError as e:
                             # Disk ist voll - das ist normal und bedeutet erfolgreicher Abschluss
-                            if e.errno == 28:  # ENOSPC - No space left on device
-                                break
-                            else:
-                                raise
-                
-            except Exception as e:
+                                if e.errno == 28:  # ENOSPC - No space left on device
+                                    break
+                                else:
+                                    raise
+                    
+                except Exception as e:
                 # Prüfe ob es der normale "disk voll" Fehler ist
                 error_msg = str(e)
                 is_normal_completion = (
@@ -331,10 +359,10 @@ class WipeEngine:
                                 current_percent = int(total_progress)
                                 if current_percent != last_update_percent:
                                     wipe_log.progress_percent = min(total_progress, 99.9)
-                                    db.session.commit()
-                                    
-                                    if device_path in WipeEngine.active_wipes:
-                                        WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
+                                db.session.commit()
+                                
+                                if device_path in WipeEngine.active_wipes:
+                                    WipeEngine.active_wipes[device_path]['progress'] = wipe_log.progress_percent
                                     
                                     last_update_percent = current_percent
                         
@@ -357,6 +385,201 @@ class WipeEngine:
                 
                 if not is_normal_completion:
                     raise Exception(f"Wipe-Befehl fehlgeschlagen (Pass {pass_num + 1}): {error_msg}")
+
+    @staticmethod
+    def _wipe_fast_clear(wipe_log_id, device_path):
+        """
+        Fast Clear-Modus - NICHT SICHER, aber sehr schnell!
+        
+        Dieser Modus ist für schnelles Löschen gedacht, bietet aber KEINE Sicherheit
+        gegen forensische Datenwiederherstellung!
+        
+        Strategien:
+        - NVMe: Nutzt nvme format (sehr schnell, löscht intern die Mapping-Tabelle)
+        - SSDs: TRIM/DISCARD + Überschreiben von Anfang/Ende
+        - HDDs: Überschreiben von Anfang/Ende (MBR/GPT + letzte GB)
+        """
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        # Update Progress
+        wipe_log.progress_percent = 5.0
+        db.session.commit()
+        
+        if device_path in WipeEngine.active_wipes:
+            WipeEngine.active_wipes[device_path]['progress'] = 5.0
+        
+        try:
+            # Strategie 1: NVMe Format (sehr schnell!)
+            if WipeEngine.is_nvme_device(device_path):
+                WipeEngine._fast_clear_nvme(wipe_log_id, device_path)
+            
+            # Strategie 2: SSD mit TRIM/DISCARD
+            elif WipeEngine.is_ssd_device(device_path):
+                WipeEngine._fast_clear_ssd(wipe_log_id, device_path)
+            
+            # Strategie 3: HDD oder Fallback
+            else:
+                WipeEngine._fast_clear_fallback(wipe_log_id, device_path)
+                
+        except Exception as e:
+            raise Exception(f"Fast Clear fehlgeschlagen: {str(e)}")
+    
+    @staticmethod
+    def _fast_clear_nvme(wipe_log_id, device_path):
+        """Fast Clear für NVMe-Geräte mit nvme-cli"""
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        try:
+            # Update Progress
+            wipe_log.progress_percent = 10.0
+            db.session.commit()
+            
+            # Versuche nvme format zu verwenden
+            # -s 1: Secure Erase Setting 1 (User Data Erase)
+            # Dies ist schnell aber nicht so sicher wie Cryptographic Erase
+            
+            # Extrahiere NVMe Namespace (z.B. /dev/nvme0n1 -> nvme0n1)
+            nvme_device = device_path.split('/')[-1]
+            
+            wipe_log.progress_percent = 30.0
+            db.session.commit()
+            
+            # Führe nvme format aus
+            result = subprocess.run(
+                ['nvme', 'format', device_path, '-s', '1'],
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 Minuten Timeout
+            )
+            
+            wipe_log.progress_percent = 90.0
+            db.session.commit()
+            
+            if result.returncode != 0:
+                # Fallback: Wenn nvme format nicht funktioniert, verwende normalen Fallback
+                raise Exception(f"nvme format fehlgeschlagen: {result.stderr}")
+            
+            wipe_log.progress_percent = 100.0
+            db.session.commit()
+            
+        except FileNotFoundError:
+            # nvme-cli nicht installiert, verwende Fallback
+            print("nvme-cli nicht gefunden, verwende Fallback-Methode")
+            WipeEngine._fast_clear_fallback(wipe_log_id, device_path)
+        except subprocess.TimeoutExpired:
+            raise Exception("NVMe Format Timeout - der Vorgang dauerte zu lange")
+    
+    @staticmethod
+    def _fast_clear_ssd(wipe_log_id, device_path):
+        """Fast Clear für SSDs mit TRIM/DISCARD"""
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        try:
+            # Update Progress
+            wipe_log.progress_percent = 10.0
+            db.session.commit()
+            
+            # Versuche TRIM/DISCARD (blkdiscard auf Linux)
+            if os.name != 'nt':
+                try:
+                    # blkdiscard löscht alle Daten per TRIM
+                    result = subprocess.run(
+                        ['blkdiscard', device_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=60
+                    )
+                    
+                    wipe_log.progress_percent = 70.0
+                    db.session.commit()
+                    
+                    if result.returncode == 0:
+                        # TRIM erfolgreich, überschreibe trotzdem Anfang und Ende
+                        WipeEngine._overwrite_edges(wipe_log_id, device_path, 70.0, 100.0)
+                        return
+                except FileNotFoundError:
+                    print("blkdiscard nicht gefunden")
+                except subprocess.TimeoutExpired:
+                    print("blkdiscard Timeout")
+            
+            # Fallback: Nur Anfang und Ende überschreiben
+            WipeEngine._fast_clear_fallback(wipe_log_id, device_path)
+            
+        except Exception as e:
+            # Bei Fehler Fallback verwenden
+            print(f"SSD Fast Clear Fehler: {e}, verwende Fallback")
+            WipeEngine._fast_clear_fallback(wipe_log_id, device_path)
+    
+    @staticmethod
+    def _fast_clear_fallback(wipe_log_id, device_path):
+        """Fallback: Überschreibt nur wichtige Bereiche (MBR/GPT + Anfang + Ende)"""
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        # Überschreibe:
+        # - Ersten 10 MB (MBR, GPT, Partition Tables)
+        # - Letzten 10 MB (Backup GPT)
+        
+        WipeEngine._overwrite_edges(wipe_log_id, device_path, 10.0, 100.0)
+    
+    @staticmethod
+    def _overwrite_edges(wipe_log_id, device_path, start_progress, end_progress):
+        """Überschreibt Anfang und Ende einer Disk"""
+        wipe_log = WipeLog.query.get(wipe_log_id)
+        
+        buffer_size = 1024 * 1024  # 1 MB
+        edge_size = 10 * 1024 * 1024  # 10 MB an jedem Ende
+        
+        try:
+            with open(device_path, 'r+b', buffering=buffer_size) as disk:
+                # 1. Überschreibe Anfang (MBR/GPT)
+                wipe_log.progress_percent = start_progress
+                db.session.commit()
+                
+                disk.seek(0)
+                bytes_written = 0
+                while bytes_written < edge_size:
+                    try:
+                        disk.write(bytes(buffer_size))
+                        bytes_written += buffer_size
+                    except IOError:
+                        break
+                
+                # Progress update
+                mid_progress = start_progress + (end_progress - start_progress) * 0.5
+                wipe_log.progress_percent = mid_progress
+                db.session.commit()
+                
+                if device_path in WipeEngine.active_wipes:
+                    WipeEngine.active_wipes[device_path]['progress'] = mid_progress
+                
+                # 2. Überschreibe Ende (Backup GPT)
+                try:
+                    # Versuche ans Ende zu springen
+                    disk.seek(-edge_size, os.SEEK_END)
+                    bytes_written = 0
+                    
+                    while bytes_written < edge_size:
+                        try:
+                            disk.write(bytes(buffer_size))
+                            bytes_written += buffer_size
+                        except IOError:
+                            break
+                except (OSError, IOError):
+                    # Wenn seek ans Ende nicht funktioniert, ignorieren
+                    pass
+                
+                # Flush um sicherzustellen dass Daten geschrieben wurden
+                disk.flush()
+                os.fsync(disk.fileno())
+                
+                wipe_log.progress_percent = end_progress
+                db.session.commit()
+                
+                if device_path in WipeEngine.active_wipes:
+                    WipeEngine.active_wipes[device_path]['progress'] = end_progress
+                
+        except Exception as e:
+            raise Exception(f"Fehler beim Überschreiben: {str(e)}")
 
     @staticmethod
     def get_wipe_status(wipe_log_id):

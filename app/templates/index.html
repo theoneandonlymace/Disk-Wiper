@@ -134,13 +134,17 @@
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Lösch-Methode</label>
                         <select id="wipe-method" class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <option value="fast_clear">⚡ Fast Clear (Sehr schnell, NICHT SICHER für NVMe/SSD)</option>
                             <option value="zeros">Zeros (Einmal mit Nullen überschreiben)</option>
                             <option value="random">Random (Einmal mit Zufallsdaten)</option>
                             <option value="dod">DoD 5220.22-M (3 Pässe, höchste Sicherheit)</option>
                         </select>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                            Fast Clear: Nutzt NVMe Format/TRIM für schnelles Löschen. Nur für nicht-sensible Daten!
+                        </p>
                     </div>
                     
-                    <div>
+                    <div id="passes-container">
                         <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Anzahl Pässe (nur für Zeros/Random)</label>
                         <input type="number" id="wipe-passes" value="1" min="1" max="10" 
                                class="w-full border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 bg-white dark:bg-gray-700 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent">
@@ -152,6 +156,23 @@
         // Set up confirm button
         const confirmBtn = document.getElementById('confirm-wipe-btn');
         confirmBtn.onclick = () => startWipe(diskId);
+        
+        // Toggle passes input visibility based on method
+        const methodSelect = document.getElementById('wipe-method');
+        const passesContainer = document.getElementById('passes-container');
+        
+        methodSelect.addEventListener('change', () => {
+            if (methodSelect.value === 'fast_clear' || methodSelect.value === 'dod') {
+                passesContainer.style.display = 'none';
+            } else {
+                passesContainer.style.display = 'block';
+            }
+        });
+        
+        // Initial state
+        if (methodSelect.value === 'fast_clear' || methodSelect.value === 'dod') {
+            passesContainer.style.display = 'none';
+        }
         
         modal.classList.remove('hidden');
     }

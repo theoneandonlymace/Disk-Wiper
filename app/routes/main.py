@@ -150,7 +150,7 @@ def wipe_disk(disk_id):
         passes = int(data.get('passes', 1))
         
         # Validierung
-        if wipe_method not in ['zeros', 'random', 'dod']:
+        if wipe_method not in ['zeros', 'random', 'dod', 'fast_clear']:
             return jsonify({
                 'success': False,
                 'error': 'Ungültige Wipe-Methode'
