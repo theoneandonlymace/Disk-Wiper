@@ -24,11 +24,16 @@ def create_app(config_class=Config):
         """Konvertiert UTC-Zeit in lokale Serverzeit"""
         if not dt:
             return None
-        # Wenn naive datetime (ohne Timezone), behandle als UTC
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        # Konvertiere zu lokaler Zeit
-        return dt.astimezone()
+        try:
+            # Wenn naive datetime (ohne Timezone), behandle als UTC
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Konvertiere zu lokaler Zeit
+            return dt.astimezone()
+        except Exception as e:
+            # Bei Fehler, gebe Original zurück
+            print(f"Fehler bei Zeitkonvertierung: {e}")
+            return dt
     
     from app.routes import main
     app.register_blueprint(main.bp)

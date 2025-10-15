@@ -76,7 +76,7 @@
                     </div>
                     <div>
                         <span class="text-gray-600 dark:text-gray-400 font-semibold">Startzeit:</span>
-                        <p class="text-gray-900 dark:text-gray-100">{{ wipe.start_time|localtime|strftime('%d.%m.%Y um %H:%M:%S Uhr') if wipe.start_time else 'N/A' }}</p>
+                        <p class="text-gray-900 dark:text-gray-100">{{ (wipe.start_time|localtime).strftime('%d.%m.%Y um %H:%M:%S Uhr') if wipe.start_time else 'N/A' }}</p>
                     </div>
                     <div>
                         <span class="text-gray-600 dark:text-gray-400 font-semibold">Dauer:</span>
